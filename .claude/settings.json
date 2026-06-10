@@ -23,7 +23,9 @@
       "Bash(python -c \"from PIL import Image; print\\('PIL OK'\\)\")",
       "Bash(python -c ' *)",
       "Bash(python -m uvicorn app.main:app --host 0.0.0.0 --port 8004)",
-      "Bash(curl -s -X POST http://localhost:8004/api/v1/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"username\\\\\":\\\\\"admin\\\\\",\\\\\"password\\\\\":\\\\\"admin123\\\\\"}\")"
+      "Bash(curl -s -X POST http://localhost:8004/api/v1/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"username\\\\\":\\\\\"admin\\\\\",\\\\\"password\\\\\":\\\\\"admin123\\\\\"}\")",
+      "Bash(curl -s -X POST http://localhost:8005/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
+      "Bash(npx vite *)"
     ],
     "additionalDirectories": [
       "d:\\中软杯"
