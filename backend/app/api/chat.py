@@ -23,6 +23,7 @@ RAG 流程（send_message）：
     - partial 和 useless 时可填写修正内容
     - 连续两次 useless → 提示用户提交客服工单
 """
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -151,16 +152,19 @@ async def send_message(
         has_image = True
         image_urls.append(tmp_path)
 
-    # 检索背景知识
+    # 检索背景知识（异步超时保护：向量库模型下载期间不阻塞对话）
     knowledge_context = ""
     try:
-        search_results = vector_store.search(message, top_k=5)
+        search_results = await asyncio.wait_for(
+            asyncio.to_thread(vector_store.search, message, 5),
+            timeout=5.0
+        )
         knowledge_context = "\n\n".join([
             f"[来源: {r['metadata'].get('source_file', '未知')}]\n{r['content'][:500]}"
             for r in search_results
         ])
-    except Exception:
-        pass
+    except (asyncio.TimeoutError, Exception):
+        pass  # 向量库不可用时跳过背景知识增强，大模型直接回答
 
     # 构建消息历史（最近10轮）
     hist_result = await db.execute(
@@ -279,6 +283,52 @@ async def submit_feedback(
         "message": "反馈已提交",
         "suggest_ticket": useless_count >= 2,
     }
+
+
+@router.delete("/conversations/{conv_id}")
+async def delete_conversation(
+    conv_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    删除对话（仅对话所有者可操作）
+
+    同时删除对话下的所有消息记录。
+    """
+    result = await db.execute(select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id))
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
+
+    # 删除所有关联消息
+    from sqlalchemy import delete as sa_delete
+    await db.execute(sa_delete(Message).where(Message.conversation_id == conv_id))
+
+    # 删除对话
+    await db.delete(conv)
+    await db.commit()
+    return {"message": "对话已删除"}
+
+
+@router.put("/conversations/{conv_id}")
+async def rename_conversation(
+    conv_id: int,
+    title: str = Form(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    重命名对话（仅对话所有者可操作）
+    """
+    result = await db.execute(select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user.id))
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
+
+    conv.title = title
+    await db.commit()
+    return {"message": "对话已重命名"}
 
 
 def _parse_structured_reply(reply: str) -> dict:

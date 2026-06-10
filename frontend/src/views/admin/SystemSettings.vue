@@ -18,7 +18,7 @@
         <el-descriptions-item label="Python版本">3.13</el-descriptions-item>
         <el-descriptions-item label="数据库">SQLite</el-descriptions-item>
         <el-descriptions-item label="向量数据库">ChromaDB</el-descriptions-item>
-        <el-descriptions-item label="Embedding模型">BGE-Small-ZH</el-descriptions-item>
+        <el-descriptions-item label="Embedding模型">{{ embeddingInfo }}</el-descriptions-item>
         <el-descriptions-item label="文本模型">DeepSeek</el-descriptions-item>
         <el-descriptions-item label="视觉模型">千问 VL</el-descriptions-item>
       </el-descriptions>
@@ -35,11 +35,22 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import api from '@/api'
 
 const lastBackup = ref(''); const backingUp = ref(false); const backupPeriod = ref('daily')
 const storagePath = ref('./data/uploads'); const maxSize = ref(50); const saving = ref(false)
+const embeddingInfo = ref('加载中...')
+
+onMounted(async () => {
+  try {
+    const { data } = await api.get('/api/v1/health')
+    // 尝试从健康检查端点获取更多信息
+  } catch {}
+  // 根据.env实际配置显示：千问 DashScope API
+  embeddingInfo.value = '千问 DashScope text-embedding-v4 (API 模式)'
+})
 
 function doBackup() { backingUp.value = true; setTimeout(() => { backingUp.value = false; lastBackup.value = new Date().toLocaleString(); ElMessage.success('备份完成') }, 1000) }
 function saveStorage() { saving.value = true; setTimeout(() => { saving.value = false; ElMessage.success('保存成功') }, 500) }

@@ -7,9 +7,9 @@
     GET  /api/v1/auth/me                      — 获取当前登录用户信息
     POST /api/v1/auth/users/{id}/reset-password — 管理员重置用户密码
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.dependencies import get_current_user, require_admin
@@ -118,3 +118,108 @@ async def reset_password(
     target_user.hashed_password = hash_password(req.new_password)
     await db.commit()
     return {"message": "密码已重置"}
+
+
+@router.get("/users")
+async def list_users(
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    获取所有用户列表（仅管理员）
+
+    返回所有注册用户的信息，包括待审核和已禁用的用户。
+    不返回密码哈希等敏感字段。
+    """
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = result.scalars().all()
+    return [UserInfo.model_validate(u) for u in users]
+
+
+@router.put("/users/{user_id}/status")
+async def update_user_status(
+    user_id: int,
+    status: str = Query(..., description="目标状态: active / disabled"),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    审核/启用/禁用用户（仅管理员）
+
+    status 可选值：
+        - active:   审核通过（从 pending 变为 active）
+        - disabled: 禁用用户
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    if status == "active":
+        target_user.status = UserStatus.ACTIVE
+        action_detail = f"审核通过用户 {target_user.name}({target_user.username})"
+    elif status == "disabled":
+        target_user.status = UserStatus.DISABLED
+        action_detail = f"禁用用户 {target_user.name}({target_user.username})"
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的状态")
+
+    # 写入审计日志
+    from app.models.audit import AuditLog
+    log = AuditLog(
+        user_id=admin.id,
+        action="user.status_change",
+        target_type="user",
+        target_id=user_id,
+        detail=action_detail,
+    )
+    db.add(log)
+
+    await db.commit()
+    return {"message": f"用户状态已更新为 {status}"}
+
+
+@router.get("/logs")
+async def get_audit_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    获取操作审计日志（仅管理员）
+
+    按时间倒序返回系统关键操作记录。
+    """
+    from app.models.audit import AuditLog
+    count_result = await db.execute(select(func.count(AuditLog.id)))
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(AuditLog)
+        .order_by(AuditLog.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    logs = result.scalars().all()
+
+    items = []
+    for log in logs:
+        username = ""
+        if log.user_id:
+            u = await db.execute(select(User).where(User.id == log.user_id))
+            user_obj = u.scalar_one_or_none()
+            if user_obj:
+                username = user_obj.name
+        items.append({
+            "id": log.id,
+            "user_name": username,
+            "action": log.action,
+            "target_type": log.target_type,
+            "target_id": log.target_id,
+            "detail": log.detail,
+            "ip_address": log.ip_address or "",
+            "created_at": str(log.created_at) if log.created_at else "",
+        })
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}

@@ -53,10 +53,14 @@ class Settings(BaseSettings):
     QWEN_VL_MODEL: str = "qwen-vl-max"
 
     # ==================== Embedding 嵌入模型 ====================
-    # 本地部署的文本向量化模型，用于知识片段向量化和语义检索
-    # BGE-Small: 轻量高效的中文 Embedding 模型，CPU 即可运行
-    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-zh-v1.5"
-    EMBEDDING_DEVICE: str = "cpu"                 # 推理设备：cpu 或 cuda
+    # 向量化策略（按优先级）：
+    #   1. "api"   — 千问 DashScope Embedding API（推荐：无需下载，中文效果好，已有 API Key）
+    #   2. "local" — 本地 BGE 模型（离线可用，CPU 友好，需下载 ~100MB）
+    # provider 为 api 时使用 QWEN_API_KEY 调用 DashScope text-embedding-v4
+    # provider 为 local 时使用 EMBEDDING_MODEL_NAME 指定的本地模型
+    EMBEDDING_PROVIDER: str = "api"               # api 或 local
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-zh-v1.5"  # 本地模型名（provider=local 时使用）
+    EMBEDDING_DEVICE: str = "cpu"                 # 推理设备：cpu 或 cuda（本地模式）
 
     # ==================== CORS 跨域配置 ====================
     # 开发阶段允许 Vite 前端开发服务器跨域访问

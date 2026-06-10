@@ -33,9 +33,11 @@ const form = ref({ username: '', password: '' })
 async function handleLogin() {
   loading.value = true
   try {
-    await authStore.login(form.value.username, form.value.password)
+    const res = await authStore.login(form.value.username, form.value.password)
     ElMessage.success('登录成功')
-    const redirect = route.query.redirect || (authStore.isAdmin ? '/admin' : '/')
+    // 根据角色决定跳转目标
+    const isAdmin = res.user.role === 'admin' || res.user.role === 'expert'
+    const redirect = route.query.redirect || (isAdmin ? '/admin' : '/')
     router.push(redirect)
   } catch { /* interceptor handles error */ }
   finally { loading.value = false }

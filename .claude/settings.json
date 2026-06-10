@@ -25,7 +25,14 @@
       "Bash(python -m uvicorn app.main:app --host 0.0.0.0 --port 8004)",
       "Bash(curl -s -X POST http://localhost:8004/api/v1/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"username\\\\\":\\\\\"admin\\\\\",\\\\\"password\\\\\":\\\\\"admin123\\\\\"}\")",
       "Bash(curl -s -X POST http://localhost:8005/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'tickets={d[\\\\\"total\\\\\"]}'\\)\")",
+      "Bash(python -m uvicorn app.main:app --host 0.0.0.0 --port 8009)",
+      "Bash(curl -s -X POST http://localhost:8009/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
+      "Bash(python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level warning)",
+      "Bash(powershell -Command \"Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(python -m uvicorn app.main:app --host 0.0.0.0 --port 8022 --log-level critical)",
+      "Bash(curl -s -X POST http://localhost:8022/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')"
     ],
     "additionalDirectories": [
       "d:\\中软杯"

@@ -12,6 +12,7 @@
       </div>
       <div class="header-right">
         <router-link to="/workspace" class="btn-workspace">个人工作台</router-link>
+        <router-link v-if="authStore.isAdmin" to="/admin" class="btn-admin">管理后台</router-link>
         <span class="user-name">{{ authStore.user?.name }}</span>
         <button class="btn-logout" @click="handleLogout">退出</button>
       </div>
@@ -45,6 +46,7 @@ function handleLogout() {
 .header-nav a:hover, .header-nav a.router-link-active { color: #1d4ed8; }
 .header-right { display: flex; align-items: center; gap: 16px; }
 .btn-workspace { color: #1d4ed8; text-decoration: none; font-size: 14px; }
+.btn-admin { color: #fff; background: #1d4ed8; padding: 4px 12px; border-radius: 4px; text-decoration: none; font-size: 13px; }
 .user-name { color: #333; font-size: 14px; }
 .btn-logout { padding: 4px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
 .user-main { padding: 24px; max-width: 1400px; margin: 0 auto; }

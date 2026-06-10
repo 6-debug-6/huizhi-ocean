@@ -49,7 +49,7 @@ def create_app() -> FastAPI:
 
     # ========== 注册 API 路由模块 ==========
     # 各路由模块独立管理各自的端点，通过 include_router 注册到主应用
-    from app.api import auth, knowledge, files, search, chat, review, tickets
+    from app.api import auth, knowledge, files, search, chat, review, tickets, import_doc
 
     # 认证模块：注册/登录/获取当前用户/密码重置
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
@@ -71,6 +71,9 @@ def create_app() -> FastAPI:
 
     # 客服工单模块：工单提交/回复/状态流转/转知识条目
     app.include_router(tickets.router, prefix="/api/v1/tickets", tags=["客服工单"])
+
+    # 文档导入模块：PDF 上传解析 → 知识片段 → 向量化入库
+    app.include_router(import_doc.router, prefix="/api/v1/import", tags=["文档导入"])
 
     # ========== 健康检查端点 ==========
     # 供部署环境的负载均衡器或监控系统探测服务是否存活

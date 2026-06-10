@@ -18,7 +18,7 @@ const routes = [
   {
     path: '/',
     component: () => import('@/layouts/UserLayout.vue'),
-    meta: { requiresAuth: true, role: 'user' },
+    meta: { requiresAuth: true, role: 'worker' },
     children: [
       { path: '', name: 'Home', component: () => import('@/views/user/Home.vue') },
       { path: 'search', name: 'SearchResult', component: () => import('@/views/user/SearchResult.vue') },
@@ -71,7 +71,7 @@ router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
   if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
-  } else if (to.meta.role && authStore.user?.role !== to.meta.role && authStore.user?.role !== 'admin') {
+  } else if (to.meta.role && authStore.user?.role !== to.meta.role && authStore.user?.role !== 'admin' && authStore.user?.role !== 'expert') {
     next({ name: 'Forbidden' })
   } else {
     next()

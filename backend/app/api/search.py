@@ -16,6 +16,7 @@
     - 向量库不可用 → 降级为数据库关键词搜索
     - LLM 不可用 → 跳过意图重写，直接使用原始查询
 """
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -75,15 +76,22 @@ async def search_knowledge(
     if image_description:
         combined_query = f"{search_query} {image_description}"
 
-    # 向量检索
+    # 向量检索（异步超时保护：向量库模型下载慢时不阻塞请求）
     vector_results = []
     try:
-        vector_results = vector_store.search(combined_query, top_k=10)
-    except Exception:
-        pass  # 向量库不可用时降级为数据库搜索
+        vector_results = await asyncio.wait_for(
+            asyncio.to_thread(vector_store.search, combined_query, 10),
+            timeout=5.0  # 5 秒超时，超时则降级
+        )
+    except (asyncio.TimeoutError, Exception):
+        pass  # 向量库超时或不可用则降级为纯数据库搜索
 
-    # 数据库精确搜索（关键词匹配）
-    db_ids = [int(r["id"].split("_")[0]) for r in vector_results if r["id"].split("_")[0].isdigit()]
+    # 从向量检索结果的 metadata 中提取关联的数据库知识条目 ID
+    db_ids = []
+    for r in vector_results:
+        entry_id = r.get("metadata", {}).get("entry_id", "")
+        if entry_id and entry_id.isdigit():
+            db_ids.append(int(entry_id))
     db_ids = list(set(db_ids))  # 去重
 
     # 从数据库获取完整信息
