@@ -36,21 +36,25 @@ import { ref, reactive, onMounted } from 'vue'
 import { getKnowledgeList } from '@/api/knowledge'
 import { getReviewList } from '@/api/review'
 import { getTicketList } from '@/api/tickets'
+import api from '@/api'
 
 const stats = reactive({ knowledge_count: 0, pending_reviews: 0, pending_tickets: 0, active_users: 0 })
 const recentLogs = ref([])
 
 onMounted(async () => {
   try {
-    const [kl, rl, tl] = await Promise.all([
+    const [kl, rl, tl, logRes, userRes] = await Promise.all([
       getKnowledgeList({ page: 1, page_size: 1, status: 'all' }),
       getReviewList({ page: 1, page_size: 1, review_status: 'pending_initial' }),
       getTicketList({ page: 1, page_size: 1, status: 'pending' }),
+      api.get('/api/v1/auth/logs', { params: { page: 1, page_size: 10 } }),
+      api.get('/api/v1/auth/users'),
     ])
     stats.knowledge_count = kl.data.total
     stats.pending_reviews = rl.data.total
     stats.pending_tickets = tl.data.total
-    stats.active_users = 1 // 简化处理
+    stats.active_users = Array.isArray(userRes.data) ? userRes.data.filter(u => u.status === 'active').length : 1
+    recentLogs.value = logRes.data?.items || []
   } catch { /* 后端可能未启动 */ }
 })
 </script>

@@ -140,17 +140,17 @@ async def send_message(
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
 
-    # 处理图片
+    # 处理图片：转为 base64 data URL（DashScope 不支持 file:// 路径）
     image_urls = []
     has_image = False
     if image:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            content = await image.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        import base64
+        content = await image.read()
+        content_type = image.content_type or "image/png"
+        b64 = base64.b64encode(content).decode("utf-8")
+        data_url = f"data:{content_type};base64,{b64}"
+        image_urls.append(data_url)
         has_image = True
-        image_urls.append(tmp_path)
 
     # 检索背景知识（异步超时保护：向量库模型下载期间不阻塞对话）
     knowledge_context = ""
@@ -188,11 +188,11 @@ async def send_message(
     # 调用大模型
     llm_messages = [{"role": "system", "content": system_prompt}]
     if image_urls and has_image:
-        # 含图片时使用千问 VL
+        # 含图片时使用千问 VL（base64 data URL 格式）
         llm_messages.append({
             "role": "user",
             "content": [
-                {"type": "image_url", "image_url": {"url": f"file://{image_urls[0]}"}},
+                {"type": "image_url", "image_url": {"url": image_urls[0]}},
                 {"type": "text", "text": message},
             ],
         })
@@ -212,7 +212,7 @@ async def send_message(
         conversation_id=conversation_id,
         role="user",
         content=message,
-        image_urls=[f"file://{u}" for u in image_urls] if image_urls else [],
+        image_urls=image_urls if image_urls else [],
     )
     db.add(user_msg)
 

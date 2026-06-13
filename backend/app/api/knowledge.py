@@ -156,6 +156,9 @@ async def create_knowledge(
         editor_id=user.id,
     )
     db.add(version)
+    # 审计日志
+    from app.services.audit_service import log_audit
+    await log_audit(db, user.id, "knowledge.create", "knowledge_entry", entry.id, f"创建知识条目：{req.title}")
     await db.commit()
     return {"id": entry.id, "message": "知识条目已创建"}
 
@@ -197,6 +200,8 @@ async def update_knowledge(
         editor_id=user.id,
     )
     db.add(version)
+    from app.services.audit_service import log_audit
+    await log_audit(db, user.id, "knowledge.update", "knowledge_entry", entry_id, f"更新知识条目 #{entry_id} → {new_ver}: {req.change_summary}")
     await db.commit()
     return {"message": "知识条目已更新", "version": new_ver}
 
@@ -218,6 +223,8 @@ async def archive_knowledge(
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="知识条目不存在")
     entry.status = KnowledgeStatus.ARCHIVED
+    from app.services.audit_service import log_audit
+    await log_audit(db, user.id, "knowledge.archive", "knowledge_entry", entry_id, f"归档知识条目 #{entry_id}")
     await db.commit()
     return {"message": "知识条目已归档"}
 
@@ -281,5 +288,7 @@ async def rollback_version(
         editor_id=user.id,
     )
     db.add(new_version)
+    from app.services.audit_service import log_audit
+    await log_audit(db, user.id, "knowledge.rollback", "knowledge_entry", entry_id, f"回滚知识条目 #{entry_id} 至 {target_ver.version}")
     await db.commit()
     return {"message": f"已回滚至版本 {target_ver.version}", "new_version": new_ver}

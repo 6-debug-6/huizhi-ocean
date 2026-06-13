@@ -2,7 +2,7 @@
   <div class="admin-layout">
     <aside class="admin-sidebar">
       <div class="sidebar-logo">管理后台</div>
-      <el-menu router :default-active="$route.path" class="sidebar-menu">
+      <el-menu router :default-active="route.path" class="sidebar-menu">
         <el-menu-item index="/admin">
           <span>仪表盘</span>
         </el-menu-item>
@@ -47,10 +47,11 @@
 
 <script setup>
 import { useAuthStore } from '@/stores/auth'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 function handleLogout() {
   authStore.logout()

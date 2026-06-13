@@ -4,9 +4,10 @@
       <div class="header-left">
         <router-link to="/" class="logo">设备检修知识系统</router-link>
         <nav class="header-nav">
-          <router-link to="/">首页</router-link>
+          <router-link to="/" exact>首页</router-link>
           <router-link to="/chat">AI 助手</router-link>
           <router-link to="/task">作业指引</router-link>
+          <router-link to="/upload">案例上传</router-link>
           <router-link to="/tickets">客服工单</router-link>
         </nav>
       </div>
@@ -43,7 +44,7 @@ function handleLogout() {
 .logo { font-size: 18px; font-weight: 700; color: #1d4ed8; text-decoration: none; }
 .header-nav { display: flex; gap: 20px; }
 .header-nav a { color: #555; text-decoration: none; font-size: 14px; }
-.header-nav a:hover, .header-nav a.router-link-active { color: #1d4ed8; }
+.header-nav a:hover, .header-nav a.router-link-exact-active { color: #1d4ed8; font-weight: 600; }
 .header-right { display: flex; align-items: center; gap: 16px; }
 .btn-workspace { color: #1d4ed8; text-decoration: none; font-size: 14px; }
 .btn-admin { color: #fff; background: #1d4ed8; padding: 4px 12px; border-radius: 4px; text-decoration: none; font-size: 13px; }

@@ -43,7 +43,23 @@
         <!-- 输入区 -->
         <div class="chat-input">
           <el-input v-model="inputText" type="textarea" :rows="3" placeholder="输入问题，描述设备故障现象..." @keydown.enter.exact="send" />
-          <el-button type="primary" @click="send" :loading="sending" style="margin-top:8px">发送</el-button>
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <!-- 图片上传（仅千问VL模式下显示） -->
+              <template v-if="activeModel === 'qwen'">
+                <el-upload :before-upload="handleImageSelect" :show-file-list="false" accept="image/*">
+                  <el-button size="small" :disabled="sending">📷 上传图片</el-button>
+                </el-upload>
+                <span v-if="selectedImage" class="image-tag">{{ selectedImage.name }} <el-button type="danger" link size="small" @click="selectedImage=null">✕</el-button></span>
+              </template>
+              <!-- 模型选择 -->
+              <el-select v-model="activeModel" size="small" style="width:140px;margin-left:12px">
+                <el-option label="DeepSeek (文本)" value="deepseek" />
+                <el-option label="千问 VL (图文)" value="qwen" />
+              </el-select>
+            </div>
+            <el-button type="primary" @click="send" :loading="sending">发送</el-button>
+          </div>
         </div>
       </template>
     </main>
@@ -64,6 +80,8 @@ const msgContainer = ref(null)
 const uselessCount = ref(0)
 const editingId = ref(null)
 const renameText = ref('')
+const selectedImage = ref(null)      // 当前选中的图片文件
+const activeModel = ref('deepseek')  // 当前选择的模型：deepseek / qwen
 
 onMounted(() => loadConversations())
 
@@ -99,25 +117,29 @@ async function switchChat(id) {
 }
 
 async function send() {
-  if (!inputText.value.trim() || sending.value) return
+  if ((!inputText.value.trim() && !selectedImage.value) || sending.value) return
   const text = inputText.value; inputText.value = ''
-  messages.value.push({ id: Date.now(), role: 'user', content: text })
+  const image = selectedImage.value; selectedImage.value = null
+  messages.value.push({ id: Date.now(), role: 'user', content: text, image: image?.name })
   sending.value = true
   await nextTick(); scrollBottom()
   try {
-    const { data } = await sendMessage(convId.value, text)
-    // 用服务器返回的真实消息替换临时消息
-    messages.value.pop() // 移除临时 user 消息
-    messages.value.push({ id: data.id, role: 'user', content: text }) // 添加真实的
+    const { data } = await sendMessage(convId.value, text, image, activeModel.value)
+    messages.value.pop()
+    messages.value.push({ id: data.id, role: 'user', content: text })
     messages.value.push(data)
     await nextTick(); scrollBottom()
-    // 更新对话列表标题
     const conv = conversations.value.find(c => c.id === convId.value)
-    if (conv && conv.title === '新对话') conv.title = text.slice(0, 30)
+    if (conv && conv.title === '新对话') conv.title = text.slice(0, 30) || '图片对话'
   } catch (e) {
     messages.value.push({ id: Date.now() + 1, role: 'assistant', content: 'AI 服务暂时不可用，请稍后重试。' })
   }
   sending.value = false
+}
+
+function handleImageSelect(file) {
+  selectedImage.value = file
+  return false
 }
 
 async function doFeedback(msg, type) {

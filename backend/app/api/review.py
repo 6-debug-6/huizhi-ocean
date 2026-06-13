@@ -181,12 +181,11 @@ async def review_action(
     if not case:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="案例不存在")
 
-    # 权限校验
+    # 权限校验：管理员可做初审和复审，专家只做复审
     current_status = case.review_status
     if current_status == ReviewStatus.PENDING_INITIAL and user.role == UserRole.EXPERT:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="初审应由管理员完成，专家负责复审")
-    if current_status == ReviewStatus.PENDING_EXPERT and user.role == UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="复审应由专家完成")
+    # 管理员也可以做复审（移除 pending_expert 对管理员的限制）
 
     # 确定最终使用的内容（通过含修改时使用审核者提供的新内容）
     final_content = req.content if req.action == "approve_edited" and req.content else case.content
@@ -218,6 +217,11 @@ async def review_action(
 
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"不支持的审核操作: {req.action}")
+
+    # 审计日志
+    from app.services.audit_service import log_audit
+    action_map = {"approve": "review.approve", "approve_edited": "review.approve_edited", "reject": "review.reject"}
+    await log_audit(db, user.id, action_map.get(req.action, "review.action"), "case_upload", case_id, f"审核案例 #{case_id}: {req.action}")
 
     await db.commit()
     return {"message": "审核操作已完成", "action": req.action}
