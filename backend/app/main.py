@@ -9,10 +9,44 @@ FastAPI 应用入口
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 from app.core.config import get_settings
 
 # 全局配置单例，通过 lru_cache 缓存，避免重复读取 .env 文件
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    应用生命周期管理
+
+    启动时完成所有耗时初始化：
+    1. 数据库建表 + 简易迁移
+    2. 向量库 Embedding 预热（避免首次请求阻塞）
+    """
+    from app.core.database import init_db
+    await init_db()
+
+    # 预热向量库 Embedding（在线程池中异步执行，不阻塞启动）
+    import asyncio
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(_warmup_vector_store),
+            timeout=10.0,
+        )
+    except (asyncio.TimeoutError, Exception):
+        pass  # 预热失败不阻塞启动，首次请求时延迟加载
+    yield
+
+
+def _warmup_vector_store():
+    """在后台线程中预热向量库，避免首次请求时阻塞"""
+    try:
+        from app.services.vector_store import vector_store
+        vector_store.get_or_create_collection("maintenance_knowledge")
+    except Exception:
+        pass
 
 
 def create_app() -> FastAPI:
@@ -23,8 +57,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        # Swagger UI 文档地址：/docs
         docs_url="/docs",
+        lifespan=lifespan,
     )
 
     # ========== CORS 跨域中间件 ==========
@@ -49,7 +83,7 @@ def create_app() -> FastAPI:
 
     # ========== 注册 API 路由模块 ==========
     # 各路由模块独立管理各自的端点，通过 include_router 注册到主应用
-    from app.api import auth, knowledge, files, search, chat, review, tickets, import_doc, cases, task_guide
+    from app.api import auth, knowledge, files, search, chat, review, tickets, import_doc, cases, task_guide, device_config, model_config
 
     # 认证模块：注册/登录/获取当前用户/密码重置
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
@@ -80,6 +114,12 @@ def create_app() -> FastAPI:
 
     # 作业指引模块：流程模板管理 + 任务创建/步骤确认/暂停/交接
     app.include_router(task_guide.router, prefix="/api/v1/tasks", tags=["作业指引"])
+
+    # 设备配置模块：设备型号管理 + 故障标签管理（扁平）
+    app.include_router(device_config.router, prefix="/api/v1/config", tags=["设备配置"])
+
+    # 模型配置模块：LLM 配置管理 + 连通性测试 + 激活切换
+    app.include_router(model_config.router, prefix="/api/v1/models", tags=["模型配置"])
 
     # ========== 健康检查端点 ==========
     # 供部署环境的负载均衡器或监控系统探测服务是否存活

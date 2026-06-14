@@ -7,6 +7,7 @@
     GET  /api/v1/auth/me                      — 获取当前登录用户信息
     POST /api/v1/auth/users/{id}/reset-password — 管理员重置用户密码
 """
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -17,6 +18,19 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.audit import AuditLog
 from app.services.audit_service import log_audit
 from app.schemas.auth import RegisterRequest, LoginRequest, LoginResponse, UserInfo, PasswordResetRequest
+
+def _format_time(dt: datetime | None) -> str:
+    """
+    格式化数据库时间为显示字符串
+
+    SQLite 存储的是本地时间（CST），但 DateTime(timezone=True) 让 SQLAlchemy
+    将其误读为 UTC。实际上存储的值就是正确的本地时间，直接取前 19 位即可，
+    不做时区转换，避免二次偏移。
+    """
+    if not dt:
+        return ""
+    # 直接取 datetime 的字符串表示前 19 位（YYYY-MM-DD HH:MM:SS）
+    return str(dt)[:19]
 
 router = APIRouter()
 
@@ -256,7 +270,7 @@ async def get_audit_logs(
             "target_id": log.target_id,
             "detail": log.detail,
             "ip_address": log.ip_address or "",
-            "created_at": str(log.created_at) if log.created_at else "",
+            "created_at": _format_time(log.created_at),
         })
 
     return {"items": items, "total": total, "page": page, "page_size": page_size}

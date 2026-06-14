@@ -38,6 +38,7 @@ from typing import Optional
 
 router = APIRouter()
 
+# 检修场景专用 Prompt（结构化回答）
 RAG_SYSTEM_PROMPT = """你是一个设备检修专家助手。回答时按以下结构组织：
 1. 问题分析（对用户描述的现象进行分析）
 2. 可能原因（列出1-3个最可能的原因，按概率排序）
@@ -54,6 +55,39 @@ RAG_SYSTEM_PROMPT = """你是一个设备检修专家助手。回答时按以下
 {history}
 
 用户消息：{user_message}"""
+
+# 日常对话 Prompt（闲聊、功能介绍、非检修类问题）
+CASUAL_PROMPT = """你是一个设备检修知识库的AI助手。你可以帮用户：
+- 检索设备故障现象和对应的检修方案
+- 解答设备维修相关问题
+- 引导用户描述故障现象并给出建议
+- 分析现场设备图片中的异常
+
+当前知识库中包含从PDF手册导入的知识和用户上传的维修案例。
+当用户问及具体设备故障时，你应切换到检修分析模式。
+
+请用自然友好的语气回复用户的以下问题：
+{user_message}"""
+
+# 非检修意图关键词：匹配则使用 CASUAL_PROMPT
+CASUAL_INTENTS = [
+    "你能做什么", "你有什么功能", "你是谁", "你会什么",
+    "知识库有哪些", "知识库包含", "知识库的内容", "知识库里",
+    "你好", "谢谢", "再见",
+    "介绍自己", "帮助", "help",
+    "当前知识库", "有哪些内容", "能帮我什么",
+]
+
+
+def _is_casual_intent(message: str) -> bool:
+    """检测用户消息是否为非检修的日常对话"""
+    msg_lower = message.strip().lower()
+    if len(msg_lower) < 2:
+        return True  # 极短消息视为闲聊
+    for keyword in CASUAL_INTENTS:
+        if keyword in msg_lower:
+            return True
+    return False
 
 
 class FeedbackRequest(BaseModel):
@@ -218,11 +252,12 @@ async def send_message(
     knowledge_context = ""
     try:
         search_results = await asyncio.wait_for(
-            asyncio.to_thread(vector_store.search, message, 5),
+            asyncio.to_thread(vector_store.search, message, 8),  # 增加到8条结果
             timeout=5.0
         )
-        knowledge_context = "\n\n".join([
-            f"[来源: {r['metadata'].get('source_file', '未知')}]\n{r['content'][:500]}"
+        # 每条知识片段最多1500字符（原500太短，丢失大量检修细节）
+        knowledge_context = "\n\n---\n\n".join([
+            f"[来源: {r['metadata'].get('source_file', '未知')}]\n{r['content'][:1500]}"
             for r in search_results
         ])
     except (asyncio.TimeoutError, Exception):
@@ -238,19 +273,24 @@ async def send_message(
         for m in recent_messages
     ])
 
-    # 构建 Prompt
-    system_prompt = RAG_SYSTEM_PROMPT.format(
-        device_model=device_model or "未指定",
-        task_step=task_step or "无",
-        knowledge_context=knowledge_context or "未找到相关知识",
-        history=history_text or "无历史",
-        user_message=message,
-    )
+    # 判断意图：闲聊vs检修
+    casual = _is_casual_intent(message) and not has_image
+
+    # 构建 Prompt（闲聊跳过向量检索，直接用对话式 Prompt）
+    if casual:
+        system_prompt = CASUAL_PROMPT.format(user_message=message)
+    else:
+        system_prompt = RAG_SYSTEM_PROMPT.format(
+            device_model=device_model or "未指定",
+            task_step=task_step or "无",
+            knowledge_context=knowledge_context or "未找到相关知识",
+            history=history_text or "无历史",
+            user_message=message,
+        )
 
     # 调用大模型
     llm_messages = [{"role": "system", "content": system_prompt}]
     if image_urls and has_image:
-        # 含图片时使用千问 VL（base64 data URL 格式）
         llm_messages.append({
             "role": "user",
             "content": [
@@ -261,10 +301,34 @@ async def send_message(
     else:
         llm_messages.append({"role": "user", "content": message})
 
-    try:
-        reply = await model_router.chat(llm_messages, has_image=has_image, temperature=0.3)
-    except Exception as e:
-        reply = f"AI 服务暂时不可用：{str(e)}\n请稍后重试或提交客服工单。"
+    # 调用大模型（带重试，处理临时性 API 故障）
+    reply = ""
+    last_error = ""
+    for attempt in range(3):
+        try:
+            reply = await asyncio.wait_for(
+                model_router.chat(llm_messages, has_image=has_image,
+                                  temperature=0.5 if casual else 0.3),
+                timeout=50.0,
+            )
+            break  # 成功则退出重试循环
+        except asyncio.TimeoutError:
+            last_error = "timeout"
+            continue  # 超时重试
+        except Exception as e:
+            last_error = str(e)[:200]
+            # HTTP 4xx 不重试（认证/参数错误），5xx 和网络错误重试
+            if "401" in str(e) or "403" in str(e) or "413" in str(e):
+                break
+            # 短暂等待后重试
+            await asyncio.sleep(0.5 * (attempt + 1))
+            continue
+
+    if not reply:
+        if last_error == "timeout":
+            reply = "AI 服务响应超时，请稍后重试。若问题持续，可提交客服工单寻求人工帮助。"
+        else:
+            reply = "AI 服务暂时不可用，请稍后重试。若需紧急帮助，可提交客服工单。"
 
     # 解析结构化回复
     structured = _parse_structured_reply(reply)

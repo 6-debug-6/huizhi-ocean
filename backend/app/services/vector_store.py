@@ -81,21 +81,19 @@ class QwenEmbeddingFunction(EmbeddingFunction):
 
         for attempt in range(retry):
             try:
-                with httpx.Client(timeout=10.0) as client:
+                with httpx.Client(timeout=8.0) as client:  # 8秒超时，避免长时间阻塞
                     resp = client.post(self.url, json=body, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
                     return data["data"][0]["embedding"]
             except Exception as e:
                 if attempt == retry - 1:
-                    # 所有重试均失败，返回零向量（不阻断入库流程）
                     import logging
                     logging.getLogger(__name__).warning(
                         f"DashScope Embedding API 调用失败 (重试{retry}次后): {e}"
                     )
-                    # 返回零向量占位（后续可重新索引）
-                    return [0.0] * 1024
-                time.sleep(1.0 * (attempt + 1))  # 递增退避
+                    return [0.0] * 1024  # 返回零向量占位
+                time.sleep(0.5 * (attempt + 1))  # 缩短退避时间
 
 
 # ==================== 自定义嵌入函数工厂 ====================
@@ -255,6 +253,26 @@ class ChromaVectorStore:
         """按 ID 批量删除（知识条目归档/删除时调用）"""
         collection = self.get_or_create_collection(collection_name)
         collection.delete(ids=ids)
+
+    def delete_by_entry_id(self, entry_id: int, collection_name: str = "maintenance_knowledge"):
+        """
+        按知识条目 ID 删除所有关联向量
+
+        遍历 collection 中所有向量，找到 metadata.entry_id 匹配的项并删除。
+        确保知识条目删除/归档时完整清理向量索引。
+        """
+        collection = self.get_or_create_collection(collection_name)
+        try:
+            all_data = collection.get()
+            ids_to_delete = []
+            metadatas = all_data.get("metadatas") or []
+            for i, meta in enumerate(metadatas):
+                if meta and str(meta.get("entry_id", "")) == str(entry_id):
+                    ids_to_delete.append(all_data["ids"][i])
+            if ids_to_delete:
+                collection.delete(ids=ids_to_delete)
+        except Exception:
+            pass
 
     def update_by_id(self, doc_id: str, content: str, metadata: dict, collection_name: str = "maintenance_knowledge"):
         """按 ID 更新单条文档（知识条目编辑时调用）"""

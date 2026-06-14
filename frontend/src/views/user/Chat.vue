@@ -42,7 +42,7 @@
         </div>
         <!-- 输入区 -->
         <div class="chat-input">
-          <el-input v-model="inputText" type="textarea" :rows="3" placeholder="输入问题，描述设备故障现象..." @keydown.enter.exact="send" />
+          <el-input v-model="inputText" type="textarea" :rows="3" placeholder="输入问题，描述设备故障现象..." @keydown.enter.exact.prevent="send()" />
           <div class="input-toolbar">
             <div class="toolbar-left">
               <!-- 图片上传（仅千问VL模式下显示） -->
@@ -67,141 +67,30 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { createConversation, getConversations, getConversation, deleteConversation, renameConversation, sendMessage, submitFeedback } from '@/api/chat'
+import { onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useChat } from '@/composables/useChat'
 
-const conversations = ref([])
-const convId = ref(null)
-const messages = ref([])
-const inputText = ref('')
-const sending = ref(false)
-const msgContainer = ref(null)
-const uselessCount = ref(0)
-const editingId = ref(null)
-const renameText = ref('')
-const selectedImage = ref(null)      // 当前选中的图片文件
-const activeModel = ref('deepseek')  // 当前选择的模型：deepseek / qwen
+const route = useRoute()
+const router = useRouter()
 
-onMounted(() => loadConversations())
+const {
+  conversations, convId, messages, inputText, sending,
+  msgContainer, uselessCount, editingId, renameText,
+  selectedImage, activeModel,
+  loadConversations, newChat, switchChat, send,
+  handleImageSelect, doFeedback, renderContent,
+  delConv, startRename, doRename,
+} = useChat()
 
-async function loadConversations() {
-  try { const { data } = await getConversations(); conversations.value = data } catch {}
-}
-
-async function newChat() {
-  try {
-    const { data } = await createConversation()
-    conversations.value.unshift(data)
-    convId.value = data.id
-    messages.value = []
-    uselessCount.value = 0
-  } catch {}
-}
-
-async function switchChat(id) {
-  convId.value = id
-  uselessCount.value = 0
-  try {
-    const { data } = await getConversation(id)
-    messages.value = data.messages || []
-    // 统计连续无用次数
-    let count = 0
-    for (let i = messages.value.length - 1; i >= 0; i--) {
-      if (messages.value[i].feedback === 'useless') count++
-      else if (messages.value[i].role === 'assistant') break
-    }
-    uselessCount.value = count
-    await nextTick(); scrollBottom()
-  } catch {}
-}
-
-async function send() {
-  if ((!inputText.value.trim() && !selectedImage.value) || sending.value) return
-  const text = inputText.value; inputText.value = ''
-  const image = selectedImage.value; selectedImage.value = null
-  messages.value.push({ id: Date.now(), role: 'user', content: text, image: image?.name })
-  sending.value = true
-  await nextTick(); scrollBottom()
-  try {
-    const { data } = await sendMessage(convId.value, text, image, activeModel.value)
-    messages.value.pop()
-    messages.value.push({ id: data.id, role: 'user', content: text })
-    messages.value.push(data)
-    await nextTick(); scrollBottom()
-    const conv = conversations.value.find(c => c.id === convId.value)
-    if (conv && conv.title === '新对话') conv.title = text.slice(0, 30) || '图片对话'
-  } catch (e) {
-    messages.value.push({ id: Date.now() + 1, role: 'assistant', content: 'AI 服务暂时不可用，请稍后重试。' })
+onMounted(async () => {
+  await loadConversations()
+  // 如果路由携带对话ID（如 /chat/123），自动切换到该对话
+  const id = Number(route.params.id)
+  if (id) {
+    await switchChat(id)
   }
-  sending.value = false
-}
-
-function handleImageSelect(file) {
-  selectedImage.value = file
-  return false
-}
-
-async function doFeedback(msg, type) {
-  let comment = ''
-  // 如果选"部分有用"或"无用"，先弹出修正输入框
-  if (type !== 'useful') {
-    const result = await ElMessageBox.prompt('请简要说明修正建议（可选）', '反馈建议', { inputType: 'textarea' }).catch(() => null)
-    if (result) comment = result.value || ''
-  }
-  try {
-    await submitFeedback(convId.value, type, comment)
-    msg.feedback = type
-    msg.feedback_comment = comment
-    if (type === 'useless') {
-      uselessCount.value++
-    }
-    ElMessage.success('反馈已提交')
-  } catch {}
-}
-
-function renderContent(m) {
-  if (m.role === 'assistant' && m.structured_reply?.analysis) {
-    const r = m.structured_reply
-    let html = ''
-    if (r.analysis) html += `<p><b>分析：</b>${r.analysis}</p>`
-    if (r.causes?.length) html += `<p><b>可能原因：</b></p><ul>${r.causes.map(c => `<li>${c}</li>`).join('')}</ul>`
-    if (r.solutions?.length) html += `<p><b>方案：</b></p><ul>${r.solutions.map(s => `<li>${s}</li>`).join('')}</ul>`
-    return html || m.content
-  }
-  return m.content?.replace(/\n/g, '<br>') || ''
-}
-
-async function delConv(c) {
-  try {
-    await ElMessageBox.confirm('确定删除此对话吗？对话中的消息也会一并删除。', '确认删除', { type: 'warning' })
-    await deleteConversation(c.id)
-    conversations.value = conversations.value.filter(x => x.id !== c.id)
-    if (convId.value === c.id) { convId.value = null; messages.value = [] }
-    ElMessage.success('已删除')
-  } catch {}
-}
-
-function startRename(c) {
-  editingId.value = c.id
-  renameText.value = c.title || '新对话'
-}
-
-async function doRename(c) {
-  const title = renameText.value.trim()
-  if (title && title !== c.title) {
-    try {
-      await renameConversation(c.id, title)
-      c.title = title
-    } catch {}
-  }
-  editingId.value = null
-}
-
-function scrollBottom() {
-  const el = msgContainer.value
-  if (el) el.scrollTop = el.scrollHeight
-}
+})
 </script>
 
 <style scoped>

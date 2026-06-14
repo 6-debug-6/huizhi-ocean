@@ -93,6 +93,58 @@ async def list_templates(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+class TemplateMatchRequest(BaseModel):
+    """模板匹配请求"""
+    device_model: str = ""
+    maintenance_level: str = "日常"
+
+
+@router.post("/templates/match")
+async def match_templates(
+    req: TemplateMatchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    根据设备型号和检修等级匹配推荐模板
+
+    评分规则：
+        - 设备型号精确匹配：+0.6
+        - 设备型号部分匹配（关键词包含）：+0.3
+        - 检修等级匹配：+0.3
+    返回 Top 5 匹配结果按得分降序排列。
+    """
+    result = await db.execute(
+        select(ProcedureTemplate).where(ProcedureTemplate.status == "published")
+    )
+    templates = result.scalars().all()
+
+    scored = []
+    for t in templates:
+        score = 0.0
+        device_list = t.device_models or []
+        # 设备型号匹配
+        if req.device_model in device_list:
+            score += 0.6
+        elif any(req.device_model and (req.device_model in dm or dm in req.device_model) for dm in device_list):
+            score += 0.3
+        # 检修等级匹配
+        if req.maintenance_level and req.maintenance_level == t.maintenance_level:
+            score += 0.3
+        # 最近更新有额外加分
+        if score > 0:
+            scored.append({
+                "template": {
+                    "id": t.id, "name": t.name, "device_models": t.device_models,
+                    "maintenance_level": t.maintenance_level, "version": t.version,
+                    "step_count": len(t.steps or []),
+                },
+                "score": round(score, 2),
+            })
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return {"matches": scored[:5]}
+
+
 @router.post("/templates")
 async def create_template(
     req: TemplateCreate,

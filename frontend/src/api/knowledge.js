@@ -35,6 +35,11 @@ export function rollbackVersion(entryId, versionId) {
   return api.post(`/api/v1/knowledge/${entryId}/versions/${versionId}/rollback`)
 }
 
+// 知识库标签聚合（首页分类树）
+export function getKnowledgeTags() {
+  return api.get('/api/v1/knowledge/tags')
+}
+
 // 删除知识条目
 export function deleteKnowledge(id) {
   return api.post(`/api/v1/knowledge/${id}/delete`)

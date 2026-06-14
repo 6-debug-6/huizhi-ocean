@@ -3,7 +3,8 @@
 
 端点：
     GET    /api/v1/knowledge/                          — 分页列表（支持关键词/来源/设备/故障标签筛选）
-    GET    /api/v1/knowledge/{id}                      — 条目详情（含版本历史）
+    GET    /api/v1/knowledge/tags                      — 聚合所有设备型号和故障标签（供首页分类树使用）
+    GET    /api/v1/knowledge/{id}                      — 条目详情（含版本历史，自动递增浏览计数）
     POST   /api/v1/knowledge/                          — 创建条目（仅管理员）
     PUT    /api/v1/knowledge/{id}                      — 编辑条目（自动版本递增，仅管理员）
     PUT    /api/v1/knowledge/{id}/archive              — 归档条目（不删除，仅管理员）
@@ -11,7 +12,7 @@
     POST   /api/v1/knowledge/{id}/versions/{v_id}/rollback — 回滚版本（仅管理员）
 
 权限：
-    - 列表和详情：需登录即可访问
+    - 列表、标签和详情：需登录即可访问
     - 创建、编辑、归档、回滚：仅管理员（require_admin 依赖）
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -41,8 +42,16 @@ async def list_knowledge(
     device_model: str = Query(""),
     fault_tag: str = Query(""),
     status: str = Query("published"),
+    sort_by: str = Query("latest", description="排序方式：latest(最新) / hot(最热)"),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    知识条目分页列表
+
+    支持关键词模糊搜索、设备型号/故障标签精确过滤、来源筛选、状态筛选。
+    排序支持 latest（按更新时间）和 hot（按浏览次数）。
+    首页公开浏览时使用 status=published。
+    """
     query = select(KnowledgeEntry)
     count_query = select(func.count(KnowledgeEntry.id))
 
@@ -68,8 +77,14 @@ async def list_knowledge(
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
+    # 排序：hot 按浏览次数降序，latest 按更新时间降序
+    if sort_by == "hot":
+        query = query.order_by(KnowledgeEntry.view_count.desc(), KnowledgeEntry.updated_at.desc())
+    else:
+        query = query.order_by(KnowledgeEntry.updated_at.desc())
+
     # 分页
-    query = query.order_by(KnowledgeEntry.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
     entries = result.scalars().all()
 
@@ -90,6 +105,35 @@ async def list_knowledge(
     )
 
 
+@router.get("/tags")
+async def get_knowledge_tags(db: AsyncSession = Depends(get_db)):
+    """
+    聚合所有已发布知识条目的设备型号和故障标签
+
+    返回去重后的设备型号列表和故障标签列表，供首页分类树使用。
+    不需要登录即可访问（通过路由注册时的依赖控制）。
+    """
+    result = await db.execute(
+        select(KnowledgeEntry).where(KnowledgeEntry.status == KnowledgeStatus.PUBLISHED)
+    )
+    entries = result.scalars().all()
+
+    device_models_set = set()
+    fault_tags_set = set()
+    for e in entries:
+        for dm in (e.device_models or []):
+            if dm:
+                device_models_set.add(dm)
+        for ft in (e.fault_tags or []):
+            if ft:
+                fault_tags_set.add(ft)
+
+    return {
+        "device_models": sorted(device_models_set),
+        "fault_tags": sorted(fault_tags_set),
+    }
+
+
 @router.get("/{entry_id}", response_model=KnowledgeDetail)
 async def get_knowledge(entry_id: int, db: AsyncSession = Depends(get_db)):
     """
@@ -106,11 +150,15 @@ async def get_knowledge(entry_id: int, db: AsyncSession = Depends(get_db)):
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="知识条目不存在")
+    # 先序列化（在 commit 前访问所有属性，避免 commit 后 MissingGreenlet 错误）
     detail = KnowledgeDetail.model_validate(entry)
     detail.versions = [
         VersionItem.model_validate(v)
         for v in sorted(entry.versions, key=lambda v: v.version_num, reverse=True)
     ]
+    # 每次查看详情递增浏览计数（用于热门排序）
+    entry.view_count = (entry.view_count or 0) + 1
+    await db.commit()
     return detail
 
 
@@ -247,15 +295,12 @@ async def delete_knowledge(
     for v in entry.versions:
         await db.delete(v)
 
-    # 尝试从向量库删除
+    # 从向量库按 entry_id 删除所有关联向量
     try:
         import asyncio as _asyncio
         await _asyncio.wait_for(
-            _asyncio.to_thread(
-                vector_store.delete_by_ids,
-                [f"pdf_entry{entry_id}"] + [f"pdf_{entry_id}_{i}" for i in range(200)]
-            ),
-            timeout=3.0,
+            _asyncio.to_thread(vector_store.delete_by_entry_id, entry_id),
+            timeout=8.0,
         )
     except Exception:
         pass

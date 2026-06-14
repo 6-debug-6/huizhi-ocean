@@ -4,7 +4,7 @@
     <el-form :model="form" label-width="100px" v-loading="loading">
       <el-form-item label="标题" required><el-input v-model="form.title" placeholder="知识条目标题" /></el-form-item>
       <el-form-item label="摘要"><el-input v-model="form.summary" type="textarea" :rows="2" placeholder="列表页展示的简短摘要" /></el-form-item>
-      <el-form-item label="来源类型"><el-select v-model="form.source"><el-option label="手动编写" value="manual" /><el-option label="PDF导入" value="pdf_import" /><el-option label="用户上传" value="user_upload" /></el-select></el-form-item>
+      <el-form-item label="来源类型"><el-select v-model="form.source"><el-option label="手动编写" value="manual" /><el-option label="工单转化" value="ticket" /></el-select></el-form-item>
       <el-form-item label="来源引用"><el-input v-model="form.source_ref" placeholder="手册名称+版本号 或 工单号" /></el-form-item>
       <el-form-item label="设备型号">
         <el-select v-model="form.device_models" multiple filterable allow-create placeholder="输入设备型号后回车添加" style="width:100%" />

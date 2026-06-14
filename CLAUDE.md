@@ -12,7 +12,8 @@
 | 大模型     | DeepSeek / 千问 API    | 支持本地部署或云端接入    |
 | 向量数据库 | ChromaDB               | 需验证 LoongArch 兼容性   |
 | 关系数据库 | PostgreSQL 或 SQLite   | SQLite 用于轻量/开发      |
-| 文件存储   | 本地文件系统 或 MinIO  |                           |
+| PDF 解析   | PyMuPDF (fitz)         | 备选 pdfplumber           |
+| 文件存储   | 本地文件系统 或 MinIO  | 图片/附件先上传落盘再URL引用 |
 
 ## 运行环境
 
@@ -36,7 +37,8 @@
 ├── frontend/               # Vue 3 前端
 │   ├── src/
 │   │   ├── views/         # 页面
-│   │   ├── components/    # 通用组件
+│   │   ├── components/    # 通用组件（含 ChatPanel.vue 可嵌入对话面板）
+│   │   ├── composables/   # 共享逻辑（useChat 对话引擎等）
 │   │   ├── api/           # API 调用封装
 │   │   ├── router/        # 路由
 │   │   └── stores/        # Pinia 状态管理
@@ -45,6 +47,30 @@
 ├── requirements.md         # 需求规格说明书
 └── CLAUDE.md
 ```
+
+## 前端架构要点
+
+### useChat Composable（共享对话引擎）
+- 封装对话核心逻辑：会话创建、消息发送、流式接收、历史管理、反馈提交
+- 与后端 `/api/v1/conversations` 系列接口交互
+- 接受 `context` 参数注入背景信息（设备型号、当前步骤、关联知识条目等）
+- 各页面通过 `useChat(conversationId)` 绑定独立会话，互不干扰
+
+### ChatPanel.vue（可嵌入对话面板）
+- 紧凑型对话面板，接收 `mode`（floating/embedded）和 `context` props
+- 三态：悬浮按钮 → 弹出面板 → 全屏展开（跳转 Chat.vue）
+- 嵌入场景：首页悬浮AI（携带当前浏览知识条目上下文）、作业指引步骤内嵌AI（携带步骤上下文）
+- 与 Chat.vue 全屏对话页共享 useChat，同一会话切换页面后历史不丢失
+
+### AI 对话能力复用原则
+- 所有对话场景（全屏对话页、首页悬浮AI、作业指引内嵌AI）共用 useChat + ChatPanel
+- 新增对话场景仅需引用 ChatPanel 并传入对应 context，不重复编写对话逻辑
+
+## 文件存储规范
+
+- 图片/附件通过 `/api/v1/files/upload` 先上传落盘（路径：`settings.UPLOAD_DIR`），再在业务接口中引用返回的文件 URL
+- 数据库仅存文件相对路径，不存文件本体
+- 案例提交前必须先完成文件上传（前端上传→拿URL→提交案例时传URL列表）
 
 ## 编码约定
 
@@ -61,3 +87,4 @@
 - 优先选择有 LoongArch 兼容性的依赖库
 - 大模型调用支持配置切换（DeepSeek / 千问 / 本地模型）
 - 用户角色：一线人员、知识管理员、专家，需权限隔离
+- 大模型API开发阶段通过 .env 配置，最终发布时支持管理员在后台动态配置

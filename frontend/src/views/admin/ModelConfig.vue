@@ -1,68 +1,161 @@
 <template>
   <div class="model-config">
-    <h2>大模型配置</h2>
-    <p class="tip">模型配置通过后端 <code>.env</code> 文件管理，修改后需重启服务生效。此处为当前运行配置的只读视图。</p>
+    <h2>大模型配置管理</h2>
+    <p class="tip">支持动态配置云端 API 或本地部署的 LLM 服务。激活配置即时生效，无需重启。</p>
 
-    <!-- 文本模型 -->
-    <el-card header="文本对话模型" style="margin-bottom:20px">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="模型名称">{{ config.text_model }}</el-descriptions-item>
-        <el-descriptions-item label="提供商">DeepSeek</el-descriptions-item>
-      </el-descriptions>
-    </el-card>
+    <div style="margin-bottom:12px"><el-button type="primary" @click="addConfig">新增配置</el-button></div>
 
-    <!-- 视觉模型 -->
-    <el-card header="视觉理解模型" style="margin-bottom:20px">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="模型名称">{{ config.vision_model }}</el-descriptions-item>
-        <el-descriptions-item label="提供商">阿里云 DashScope</el-descriptions-item>
-      </el-descriptions>
-    </el-card>
+    <el-table :data="configs" v-loading="loading">
+      <el-table-column prop="model_name" label="模型名称" min-width="160" />
+      <el-table-column prop="model_type" label="类型" width="100">
+        <template #default="{ row }"><el-tag size="small">{{ row.model_type === 'cloud' ? '云端API' : '本地部署' }}</el-tag></template>
+      </el-table-column>
+      <el-table-column prop="api_base" label="API 地址" min-width="220" />
+      <el-table-column prop="api_key_masked" label="API Key" width="140" />
+      <el-table-column label="状态" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
+            {{ row.is_active ? '● 激活' : '○ 未激活' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="updated_at" label="更新时间" width="150">
+        <template #default="{ row }">{{ row.updated_at?.slice(0,16)?.replace('T',' ') }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="300" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" @click="editConfig(row)">编辑</el-button>
+          <el-button size="small" @click="doTest(row)" :loading="testingId===row.id">测试</el-button>
+          <el-button v-if="!row.is_active" size="small" type="primary" @click="doActivate(row)">激活</el-button>
+          <el-button size="small" type="danger" @click="doDelete(row)" :disabled="row.is_active">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
 
-    <!-- Embedding 模型 -->
-    <el-card header="Embedding 向量模型" style="margin-bottom:20px">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="模型名称">{{ config.embedding_model }}</el-descriptions-item>
-        <el-descriptions-item label="模式">{{ config.embedding_provider === 'api' ? '云端 API' : '本地部署' }}</el-descriptions-item>
-        <el-descriptions-item label="向量维度">1024</el-descriptions-item>
-        <el-descriptions-item label="提供商">{{ config.embedding_provider === 'api' ? '阿里云 DashScope' : 'HuggingFace BGE' }}</el-descriptions-item>
-      </el-descriptions>
-    </el-card>
-
-    <!-- 参数配置（只读提示） -->
-    <el-card header="调用参数">
-      <el-form label-width="140px">
-        <el-form-item label="Temperature"><el-slider :model-value="0.3" :min="0" :max="1" :step="0.1" show-input style="width:300px" disabled /></el-form-item>
-        <el-form-item label="Max Tokens"><el-input-number :model-value="4096" :min="512" :max="32768" disabled /></el-form-item>
-        <el-form-item label="检索召回数 Top-K"><el-input-number :model-value="5" :min="1" :max="20" disabled /></el-form-item>
-        <el-alert title="参数在 .env 中配置 DEEPSEEK_MODEL 等字段，暂不支持界面修改" type="info" :closable="false" style="width:500px" />
+    <!-- 新增/编辑对话框 -->
+    <el-dialog v-model="showDialog" :title="editingId ? '编辑配置' : '新增配置'" width="500px">
+      <el-form :model="form" label-width="100px">
+        <el-form-item label="模型名称" required>
+          <el-select v-model="form.model_name" allow-create filterable style="width:100%">
+            <el-option label="deepseek-chat" value="deepseek-chat" />
+            <el-option label="qwen-vl-max" value="qwen-vl-max" />
+            <el-option label="qwen3-vl-flash" value="qwen3-vl-flash" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="模型类型" required>
+          <el-radio-group v-model="form.model_type">
+            <el-radio label="cloud">云端 API</el-radio>
+            <el-radio label="local">本地部署</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="API 地址" required>
+          <el-input v-model="form.api_base" :placeholder="form.model_type==='cloud' ? 'https://api.deepseek.com' : 'http://localhost:8000'" />
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input v-model="form.api_key" type="password" show-password placeholder="sk-..." />
+        </el-form-item>
+        <el-divider />
+        <el-form-item label="Temperature">
+          <el-slider v-model="form.parameters.temperature" :min="0" :max="1" :step="0.1" show-input style="width:240px" />
+        </el-form-item>
+        <el-form-item label="Max Tokens">
+          <el-input-number v-model="form.parameters.max_tokens" :min="512" :max="32768" :step="1024" />
+        </el-form-item>
       </el-form>
-    </el-card>
+      <template #footer>
+        <el-button @click="showDialog=false">取消</el-button>
+        <el-button type="primary" @click="saveConfig" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/api'
 
-const config = reactive({
-  text_model: '加载中...',
-  vision_model: '加载中...',
-  embedding_model: '加载中...',
-  embedding_provider: 'api',
+const configs = ref([]); const loading = ref(false)
+const showDialog = ref(false); const editingId = ref(null); const saving = ref(false)
+const testingId = ref(null)
+const form = reactive({
+  model_name: 'deepseek-chat', model_type: 'cloud', api_base: '', api_key: '',
+  parameters: { temperature: 0.3, max_tokens: 4096 }
 })
 
-onMounted(async () => {
-  // 从后端获取当前模型配置
+onMounted(() => loadConfigs())
+
+async function loadConfigs() {
+  loading.value = true
+  try { const { data } = await api.get('/api/v1/models/configs'); configs.value = data || [] } catch {}
+  loading.value = false
+}
+
+function addConfig() {
+  editingId.value = null
+  form.model_name = 'deepseek-chat'; form.model_type = 'cloud'
+  form.api_base = ''; form.api_key = ''
+  form.parameters = { temperature: 0.3, max_tokens: 4096 }
+  showDialog.value = true
+}
+
+function editConfig(row) {
+  editingId.value = row.id
+  form.model_name = row.model_name; form.model_type = row.model_type
+  form.api_base = row.api_base || ''; form.api_key = ''
+  form.parameters = { ...(row.parameters || { temperature: 0.3, max_tokens: 4096 }) }
+  showDialog.value = true
+}
+
+async function saveConfig() {
+  if (!form.model_name || !form.api_base) { ElMessage.warning('请填写模型名称和API地址'); return }
+  saving.value = true
   try {
-    const { data } = await api.get('/api/v1/health')  // 健康检查返回版本信息
-    // 根据.env实际配置显示
-    config.text_model = 'deepseek-v4-pro'
-    config.vision_model = 'qwen3-vl-flash'
-    config.embedding_model = 'text-embedding-v4'
-    config.embedding_provider = 'api'
+    const payload = { ...form }
+    if (!payload.api_key) delete payload.api_key  // 不提交空key
+    if (editingId.value) {
+      await api.put(`/api/v1/models/configs/${editingId.value}`, payload)
+      ElMessage.success('已更新')
+    } else {
+      await api.post('/api/v1/models/configs', payload)
+      ElMessage.success('已创建')
+    }
+    showDialog.value = false
+    loadConfigs()
   } catch {}
-})
+  saving.value = false
+}
+
+async function doActivate(row) {
+  try {
+    await api.post(`/api/v1/models/configs/${row.id}/activate`)
+    ElMessage.success(`已激活 ${row.model_name}`)
+    loadConfigs()
+  } catch {}
+}
+
+async function doTest(row) {
+  testingId.value = row.id
+  try {
+    const { data } = await api.post(`/api/v1/models/configs/${row.id}/test`)
+    if (data.status === 'ok') {
+      ElMessage.success(data.message)
+    } else {
+      ElMessage.error(data.message)
+    }
+  } catch {}
+  testingId.value = null
+}
+
+async function doDelete(row) {
+  if (row.is_active) { ElMessage.warning('不能删除已激活的配置'); return }
+  try {
+    await ElMessageBox.confirm(`确定删除配置"${row.model_name}"吗？`, '确认删除', { type: 'warning' })
+    await api.post(`/api/v1/models/configs/${row.id}/delete`)
+    ElMessage.success('已删除')
+    loadConfigs()
+  } catch {}
+}
 </script>
 
 <style scoped>

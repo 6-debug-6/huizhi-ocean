@@ -73,3 +73,16 @@ async def init_db():
         # noqa 注释告诉 linter 不要警告"未使用的导入"
         from app.models import user, knowledge, conversation, ticket, audit  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
+
+        # ========== 简易数据库迁移（开发阶段用） ==========
+        # SQLAlchemy 的 create_all 不会对已存在的表添加新列
+        # 开发阶段使用原始 SQL 添加缺失的列（如果不存在则忽略错误）
+        # 生产环境应使用 Alembic 替代此方式
+        try:
+            await conn.run_sync(
+                lambda sync_conn: sync_conn.execute(
+                    "ALTER TABLE knowledge_entries ADD COLUMN view_count INTEGER DEFAULT 0"
+                )
+            )
+        except Exception:
+            pass  # 列已存在则跳过

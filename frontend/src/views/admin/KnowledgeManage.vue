@@ -2,8 +2,9 @@
   <div class="knowledge-manage">
     <div class="page-header">
       <h2>知识库管理</h2>
-      <div>
+      <div style="display:flex;gap:8px">
         <el-button type="primary" @click="$router.push('/admin/knowledge/new')">新增知识</el-button>
+        <el-button @click="showImport=true">导入 PDF</el-button>
       </div>
     </div>
 
@@ -44,16 +45,82 @@
       </el-table-column>
     </el-table>
     <el-pagination v-model:current-page="page" :total="total" :page-size="20" @current-change="fetchList" layout="prev,next" style="margin-top:16px" />
+
+    <!-- PDF 导入对话框 -->
+    <el-dialog v-model="showImport" title="导入 PDF 手册" width="480px" @close="resetImport">
+      <el-form :model="importForm" label-width="80px">
+        <el-form-item label="PDF 文件" required>
+          <el-upload :auto-upload="false" :limit="1" accept=".pdf" :on-change="onPdfChange" :file-list="importForm.pdfList">
+            <el-button type="primary">选择文件</el-button>
+            <template #tip><div style="font-size:12px;color:#999">支持 PDF 格式，最大 50MB</div></template>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="设备型号">
+          <el-input v-model="importForm.deviceModel" placeholder="如：XX型柴油发动机" />
+        </el-form-item>
+      </el-form>
+      <div v-if="importResult" class="import-result">
+        <el-divider />
+        <p v-html="importResult"></p>
+      </div>
+      <template #footer>
+        <el-button @click="showImport=false">关闭</el-button>
+        <el-button type="primary" @click="doImport" :loading="importing">开始导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import api from '@/api'
 import { getKnowledgeList, archiveKnowledge, deleteKnowledge } from '@/api/knowledge'
 
 const items = ref([]); const loading = ref(false); const total = ref(0); const page = ref(1)
 const keyword = ref(''); const statusFilter = ref('')
+
+// ========== PDF 导入 ==========
+const showImport = ref(false)
+const importing = ref(false)
+const importResult = ref('')
+const importForm = reactive({ pdfList: [], deviceModel: '', file: null })
+
+function onPdfChange(file) {
+  importForm.file = file.raw
+  importForm.pdfList = [file]
+}
+
+function resetImport() {
+  importForm.pdfList = []
+  importForm.deviceModel = ''
+  importForm.file = null
+  importResult.value = ''
+}
+
+async function doImport() {
+  if (!importForm.file) { ElMessage.warning('请选择PDF文件'); return }
+  importing.value = true
+  importResult.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('file', importForm.file)
+    if (importForm.deviceModel) fd.append('device_model', importForm.deviceModel)
+    const { data } = await api.post('/api/v1/import/pdf', fd)
+    importResult.value = `
+      <b>导入成功！</b><br>
+      知识条目 ID：${data.entry_id}<br>
+      片段总数：${data.chunks_total}<br>
+      向量化：${data.chunks_vectorized}<br>
+      ${data.images_described ? `图片描述：${data.images_described} 张<br>` : ''}
+      <a href="/admin/knowledge/${data.entry_id}/edit">点击编辑此条目 →</a>
+    `
+    fetchList()
+  } catch (e) {
+    importResult.value = `<span style="color:#dc2626">导入失败：${e.response?.data?.detail || e.message}</span>`
+  }
+  importing.value = false
+}
 
 onMounted(() => fetchList())
 
@@ -82,4 +149,6 @@ async function doDelete(row) {
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.import-result { font-size: 13px; line-height: 1.8; }
+.import-result :deep(a) { color: #1d4ed8; }
 </style>

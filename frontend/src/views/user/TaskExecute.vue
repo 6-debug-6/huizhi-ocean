@@ -12,7 +12,7 @@
         <el-button v-if="task.status==='paused'" type="success" @click="doResume">恢复</el-button>
         <el-button @click="showHandover=true">交接</el-button>
         <el-button v-if="task.status!=='completed'" type="success" @click="doComplete">✓ 提前完成</el-button>
-        <el-button type="primary" plain @click="openAIChat">🤖 智能问答</el-button>
+        <el-button type="primary" plain @click="showChat = !showChat">🤖 智能问答</el-button>
       </div>
     </div>
 
@@ -92,6 +92,14 @@
         <el-button type="primary" @click="doHandover" :loading="acting">确认交接</el-button>
       </template>
     </el-dialog>
+
+    <!-- 步骤内嵌AI问答面板 -->
+    <ChatPanel
+      v-if="showChat"
+      :device-model="task.device_model"
+      :task-step="currentStepTitle"
+      :task-id="task.id"
+    />
   </div>
 </template>
 
@@ -100,6 +108,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/api'
+import ChatPanel from '@/components/ChatPanel.vue'
 
 const route = useRoute(); const router = useRouter()
 const task = ref({ steps: [], confirmed_step_nums: [], status: '', pause_reason: '', handover_note: '' })
@@ -107,6 +116,7 @@ const loading = ref(false); const acting = ref(false)
 const currentDetail = ref(0)
 const complianceChecked = ref([])
 const showHandover = ref(false); const handoverTo = ref(null); const handoverNote = ref('')
+const showChat = ref(false)
 const userList = ref([])
 
 const progress = computed(() => {
@@ -209,9 +219,12 @@ async function doHandover() {
   finally { acting.value = false }
 }
 
-function openAIChat() {
-  router.push({ name: 'Chat', query: { task_id: task.value.id, device_model: task.value.device_model, task_step: task.value.steps[task.value.current_step]?.title || '' } })
-}
+// 当前步骤标题（用于ChatPanel上下文）
+const currentStepTitle = computed(() => {
+  const s = task.value.steps?.[currentDetail.value]
+  if (!s) return ''
+  return s.title || ''
+})
 </script>
 
 <style scoped>

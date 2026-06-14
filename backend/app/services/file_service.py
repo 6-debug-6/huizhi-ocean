@@ -72,18 +72,19 @@ def save_upload(file_content: bytes, original_name: str, subdir: str = "files") 
         original_name: 原始文件名（用于保留扩展名）
         subdir: 子目录名（images/documents/others）
 
-    返回：相对于 UPLOAD_DIR 的文件路径
+    返回：相对于 UPLOAD_DIR 的文件路径（含子目录前缀，如 documents/20250610/file_uuid.pdf）
     """
-    filename = generate_filename(original_name)
-    filepath = os.path.join(get_upload_dir(subdir), os.path.basename(filename))
-    # 确保日期子目录存在
-    dirpath = os.path.dirname(filepath)
-    Path(dirpath).mkdir(parents=True, exist_ok=True)
+    filename = generate_filename(original_name)  # 如 20250610/file_uuid.pdf
+    target_dir = get_upload_dir(subdir)           # 如 ./data/uploads/documents
+    # 拼接完整路径并确保日期子目录存在
+    full_path = os.path.join(target_dir, filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-    with open(filepath, "wb") as f:
+    with open(full_path, "wb") as f:
         f.write(file_content)
 
-    return filename
+    # 返回含子目录的相对路径
+    return os.path.join(subdir, filename)
 
 
 def convert_webp_to_png(filepath: str) -> str:

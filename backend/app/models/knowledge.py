@@ -70,6 +70,7 @@ class KnowledgeEntry(Base):
     procedure_data = Column(JSON, default=None)               # 结构化步骤数据（JSON 格式）
     status = Column(Enum(KnowledgeStatus), default=KnowledgeStatus.PUBLISHED)  # 发布状态
     current_version = Column(String(20), default="V1.0")      # 当前版本号
+    view_count = Column(Integer, default=0)                   # 浏览次数（用于热门排序）
     author_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 创建者
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

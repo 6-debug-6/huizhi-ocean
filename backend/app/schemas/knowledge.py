@@ -66,6 +66,7 @@ class KnowledgeListItem(BaseModel):
     is_procedure: bool        # 是否作业指引
     status: str               # 发布状态
     current_version: str      # 当前版本号
+    view_count: int = 0       # 浏览次数
     author_id: Optional[int]  # 作者 ID
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
@@ -107,6 +108,7 @@ class KnowledgeDetail(BaseModel):
     procedure_data: Optional[list[dict]]      # 步骤化数据（若 is_procedure=True）
     status: str
     current_version: str
+    view_count: int = 0                       # 浏览次数
     author_id: Optional[int]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
