@@ -25,6 +25,7 @@ from app.core.dependencies import get_current_user, require_role
 from app.models.user import User, UserRole
 from app.models.ticket import Ticket, TicketReply, TicketStatus
 from app.models.knowledge import KnowledgeEntry, KnowledgeVersion, KnowledgeSource, KnowledgeStatus
+from app.services.audit_service import log_audit
 from app.schemas.ticket import (
     TicketCreate, TicketReplyCreate, TicketListItem, TicketDetail,
     TicketListResponse, ReplyItem, TicketStatusUpdate,
@@ -67,7 +68,6 @@ async def create_ticket(
 
     # 生成工单号并更新
     ticket.ticket_no = _generate_ticket_no(ticket.id)
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "ticket.create", "ticket", ticket.id, f"提交工单：{ticket.title}")
     await db.commit()
     await db.refresh(ticket)
@@ -248,7 +248,6 @@ async def reply_ticket(
     # 更新状态为已回复
     ticket.status = TicketStatus.REPLIED
 
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "ticket.reply", "ticket", ticket_id, f"回复工单 #{ticket.ticket_no}")
     await db.commit()
     return {"id": reply.id, "message": "回复已发送"}
@@ -296,7 +295,6 @@ async def update_ticket_status(
     if req.assignee_id:
         ticket.assignee_id = req.assignee_id
 
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, f"ticket.{req.status}", "ticket", ticket_id, f"工单 #{ticket.ticket_no} 状态更新为 {req.status}")
     await db.commit()
     return {"message": f"工单状态已更新为 {req.status}"}
@@ -367,7 +365,6 @@ async def ticket_to_knowledge(
         editor_id=user.id,
     )
     db.add(version)
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "ticket.to_knowledge", "ticket", ticket_id, f"工单 #{ticket.ticket_no} 转化为知识条目 #{entry.id}")
     await db.commit()
 

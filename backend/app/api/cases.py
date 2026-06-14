@@ -13,13 +13,9 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.knowledge import CaseUpload, ReviewStatus
+from app.services.audit_service import log_audit
 
 router = APIRouter()
-
-
-class CaseCreateRequest:
-    """用 pydantic 验证的请求体，在路由中通过 FastAPI 的 Body 依赖解析"""
-    pass
 
 
 from pydantic import BaseModel
@@ -109,7 +105,8 @@ async def list_my_cases(
             "fault_tags": c.fault_tags,
             "is_experience_based": c.is_experience_based,
             "review_status": c.review_status.value,
-            "reject_reason": c.reject_reason,
+            "review_comment": c.review_comment or "",
+            "reject_reason": c.reject_reason or "",
             "created_at": str(c.created_at) if c.created_at else "",
         })
 
@@ -144,3 +141,21 @@ async def get_case_detail(
         "review_comment": case.review_comment,
         "created_at": str(case.created_at) if case.created_at else "",
     }
+
+
+@router.delete("/{case_id}")
+@router.post("/{case_id}/delete")
+async def delete_case(
+    case_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除自己上传的案例"""
+    result = await db.execute(select(CaseUpload).where(CaseUpload.id == case_id, CaseUpload.uploader_id == user.id))
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="案例不存在或不属于你")
+
+    await db.delete(case)
+    await db.commit()
+    return {"message": "案例已删除"}

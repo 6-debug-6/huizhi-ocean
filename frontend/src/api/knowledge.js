@@ -34,3 +34,8 @@ export function getVersions(id) {
 export function rollbackVersion(entryId, versionId) {
   return api.post(`/api/v1/knowledge/${entryId}/versions/${versionId}/rollback`)
 }
+
+// 删除知识条目
+export function deleteKnowledge(id) {
+  return api.post(`/api/v1/knowledge/${id}/delete`)
+}

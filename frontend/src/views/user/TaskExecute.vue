@@ -140,7 +140,7 @@ onMounted(async () => {
   } catch {}
   loading.value = false
   // 加载用户列表（用于交接）
-  try { const { data } = await api.get('/api/v1/auth/users'); userList.value = Array.isArray(data) ? data.filter(u => u.id !== api.defaults?.userId) : [] } catch {}
+  try { const { data } = await api.get('/api/v1/auth/users'); userList.value = Array.isArray(data) ? data.filter(u => u.id !== task.value.assignee_id) : [] } catch {}
 })
 
 async function confirmStep() {

@@ -14,6 +14,8 @@ from app.core.database import get_db
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.dependencies import get_current_user, require_admin
 from app.models.user import User, UserRole, UserStatus
+from app.models.audit import AuditLog
+from app.services.audit_service import log_audit
 from app.schemas.auth import RegisterRequest, LoginRequest, LoginResponse, UserInfo, PasswordResetRequest
 
 router = APIRouter()
@@ -165,7 +167,6 @@ async def update_user_status(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的状态")
 
     # 写入审计日志
-    from app.models.audit import AuditLog
     log = AuditLog(
         user_id=admin.id,
         action="user.status_change",
@@ -177,6 +178,43 @@ async def update_user_status(
 
     await db.commit()
     return {"message": f"用户状态已更新为 {status}"}
+
+
+@router.delete("/users/{user_id}")
+@router.post("/users/{user_id}/delete")
+async def delete_user(
+    user_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除用户（仅管理员）"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    if target.username == "admin":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能删除超级管理员")
+    await db.delete(target)
+    await log_audit(db, admin.id, "user.delete", "user", user_id, f"删除用户：{target.name}")
+    await db.commit()
+    return {"message": "用户已删除"}
+
+
+@router.delete("/logs/{log_id}")
+@router.post("/logs/{log_id}/delete")
+async def delete_log(
+    log_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除单条审计日志（仅管理员）"""
+    result = await db.execute(select(AuditLog).where(AuditLog.id == log_id))
+    log_entry = result.scalar_one_or_none()
+    if not log_entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="日志不存在")
+    await db.delete(log_entry)
+    await db.commit()
+    return {"message": "日志已删除"}
 
 
 @router.get("/logs")
@@ -191,7 +229,6 @@ async def get_audit_logs(
 
     按时间倒序返回系统关键操作记录。
     """
-    from app.models.audit import AuditLog
     count_result = await db.execute(select(func.count(AuditLog.id)))
     total = count_result.scalar() or 0
 

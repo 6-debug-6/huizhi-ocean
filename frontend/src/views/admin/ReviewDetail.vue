@@ -18,13 +18,18 @@
         <el-input v-model="comment" type="textarea" :rows="3" placeholder="审核意见（可选）" style="margin-bottom:12px" />
 
         <!-- 驳回原因输入 -->
-        <el-input v-if="showReject" v-model="rejectReason" type="textarea" :rows="2" placeholder="请填写驳回原因" style="margin-bottom:12px" />
+        <div v-if="showReject" style="margin-bottom:12px">
+          <el-input v-model="rejectReason" type="textarea" :rows="2" placeholder="请填写驳回原因" />
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <el-button type="danger" @click="doReject" :loading="acting">确认驳回</el-button>
+            <el-button @click="showReject=false">取消</el-button>
+          </div>
+        </div>
 
-        <div class="actions">
+        <div v-else class="actions">
           <el-button type="success" @click="doAction('approve')" :loading="acting">通过</el-button>
           <el-button type="warning" @click="doAction('approve_edited')" :loading="acting">通过（含修改）</el-button>
-          <el-button type="danger" @click="toggleReject" :loading="acting">驳回</el-button>
-          <el-button v-if="showReject" type="danger" @click="doAction('reject')" style="margin-left:8px">确认驳回</el-button>
+          <el-button type="danger" @click="showReject=true">驳回</el-button>
         </div>
       </el-card>
     </div>
@@ -50,10 +55,18 @@ async function fetchDetail() {
   try { const { data } = await getReviewDetail(route.params.id); detail.value = data } finally { loading.value = false }
 }
 
-function toggleReject() { showReject.value = !showReject.value; rejectReason.value = '' }
+async function doReject() {
+  if (!rejectReason.value.trim()) { ElMessage.warning('请填写驳回原因'); return }
+  acting.value = true
+  try {
+    await reviewAction(detail.value.id, { action: 'reject', review_comment: comment.value, reject_reason: rejectReason.value })
+    ElMessage.success('案例已驳回')
+    router.push('/admin/review')
+  } catch {}
+  finally { acting.value = false }
+}
 
 async function doAction(action) {
-  if (action === 'reject' && !rejectReason.value.trim()) { ElMessage.warning('请填写驳回原因'); return }
   acting.value = true
   try {
     await reviewAction(detail.value.id, { action, review_comment: comment.value, reject_reason: rejectReason.value })

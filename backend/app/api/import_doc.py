@@ -52,7 +52,7 @@ async def import_pdf(
 
     # 保存 PDF 到磁盘
     filepath = save_upload(content, file.filename, "documents")
-    abs_path = os.path.join("data/uploads", filepath)
+    abs_path = os.path.join(settings.UPLOAD_DIR, filepath)
 
     # 解析 PDF → 知识片段（延迟导入 pdfplumber 依赖）
     try:

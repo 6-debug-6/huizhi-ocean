@@ -22,6 +22,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_admin
 from app.models.user import User
 from app.models.knowledge import KnowledgeEntry, KnowledgeVersion, KnowledgeStatus, KnowledgeSource
+from app.services.audit_service import log_audit
+from app.services.vector_store import vector_store  # 供删除端点使用
 from app.schemas.knowledge import (
     KnowledgeCreate, KnowledgeUpdate, KnowledgeListItem, KnowledgeDetail,
     KnowledgeListResponse, VersionItem,
@@ -156,8 +158,6 @@ async def create_knowledge(
         editor_id=user.id,
     )
     db.add(version)
-    # 审计日志
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "knowledge.create", "knowledge_entry", entry.id, f"创建知识条目：{req.title}")
     await db.commit()
     return {"id": entry.id, "message": "知识条目已创建"}
@@ -200,7 +200,6 @@ async def update_knowledge(
         editor_id=user.id,
     )
     db.add(version)
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "knowledge.update", "knowledge_entry", entry_id, f"更新知识条目 #{entry_id} → {new_ver}: {req.change_summary}")
     await db.commit()
     return {"message": "知识条目已更新", "version": new_ver}
@@ -223,10 +222,48 @@ async def archive_knowledge(
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="知识条目不存在")
     entry.status = KnowledgeStatus.ARCHIVED
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "knowledge.archive", "knowledge_entry", entry_id, f"归档知识条目 #{entry_id}")
     await db.commit()
     return {"message": "知识条目已归档"}
+
+
+@router.delete("/{entry_id}")
+@router.post("/{entry_id}/delete")
+async def delete_knowledge(
+    entry_id: int,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除知识条目及其所有版本（仅管理员）"""
+    result = await db.execute(
+        select(KnowledgeEntry).options(selectinload(KnowledgeEntry.versions))
+        .where(KnowledgeEntry.id == entry_id)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="知识条目不存在")
+
+    # 删除所有版本记录
+    for v in entry.versions:
+        await db.delete(v)
+
+    # 尝试从向量库删除
+    try:
+        import asyncio as _asyncio
+        await _asyncio.wait_for(
+            _asyncio.to_thread(
+                vector_store.delete_by_ids,
+                [f"pdf_entry{entry_id}"] + [f"pdf_{entry_id}_{i}" for i in range(200)]
+            ),
+            timeout=3.0,
+        )
+    except Exception:
+        pass
+
+    await log_audit(db, user.id, "knowledge.delete", "knowledge_entry", entry_id, f"删除知识条目 #{entry_id}: {entry.title}")
+    await db.delete(entry)
+    await db.commit()
+    return {"message": "知识条目已删除"}
 
 
 @router.get("/{entry_id}/versions")
@@ -288,7 +325,6 @@ async def rollback_version(
         editor_id=user.id,
     )
     db.add(new_version)
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "knowledge.rollback", "knowledge_entry", entry_id, f"回滚知识条目 #{entry_id} 至 {target_ver.version}")
     await db.commit()
     return {"message": f"已回滚至版本 {target_ver.version}", "new_version": new_ver}

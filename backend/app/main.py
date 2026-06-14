@@ -85,7 +85,8 @@ def create_app() -> FastAPI:
     # 供部署环境的负载均衡器或监控系统探测服务是否存活
     @app.get("/api/v1/health")
     async def health_check():
-        return {"status": "ok", "version": settings.APP_VERSION}
+        from datetime import datetime
+        return {"status": "ok", "version": settings.APP_VERSION, "server_time": datetime.now().strftime("%H:%M:%S")}
 
     return app
 

@@ -27,11 +27,19 @@
       <el-table-column prop="status" label="状态" width="80">
         <template #default="{ row }"><el-tag :type="row.status==='published'?'success':row.status==='draft'?'info':'warning'" size="small">{{ { published:'已发布', draft:'草稿', archived:'已归档' }[row.status] }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="操作" width="200">
+      <el-table-column label="操作" width="160">
         <template #default="{ row }">
-          <el-button size="small" @click="$router.push(`/admin/knowledge/${row.id}/edit`)">编辑</el-button>
-          <el-button size="small" @click="$router.push(`/admin/knowledge/${row.id}/versions`)">版本</el-button>
-          <el-button size="small" type="danger" @click="doArchive(row)" v-if="row.status!=='archived'">归档</el-button>
+          <el-button size="small" type="primary" @click="$router.push(`/admin/knowledge/${row.id}/edit`)">编辑</el-button>
+          <el-dropdown trigger="click" style="margin-left:8px">
+            <el-button size="small">更多 ▾</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="$router.push(`/admin/knowledge/${row.id}/versions`)">版本历史</el-dropdown-item>
+                <el-dropdown-item v-if="row.status!=='archived'" @click="doArchive(row)">归档</el-dropdown-item>
+                <el-dropdown-item divided @click="doDelete(row)" style="color:#dc2626">删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -42,7 +50,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getKnowledgeList, archiveKnowledge } from '@/api/knowledge'
+import { getKnowledgeList, archiveKnowledge, deleteKnowledge } from '@/api/knowledge'
 
 const items = ref([]); const loading = ref(false); const total = ref(0); const page = ref(1)
 const keyword = ref(''); const statusFilter = ref('')
@@ -61,6 +69,13 @@ async function doArchive(row) {
   await ElMessageBox.confirm('确定归档此条目吗？归档后用户端不再可见。', '确认归档')
   await archiveKnowledge(row.id)
   ElMessage.success('已归档')
+  fetchList()
+}
+
+async function doDelete(row) {
+  await ElMessageBox.confirm('确定永久删除此条目吗？所有版本也将被删除，此操作不可撤销。', '确认删除', { type: 'error' })
+  await deleteKnowledge(row.id)
+  ElMessage.success('已删除')
   fetchList()
 }
 </script>

@@ -30,6 +30,7 @@ from app.schemas.review import (
     ReviewAction, ReviewListItem, ReviewDetail, ReviewListResponse,
 )
 from app.services.vector_store import vector_store
+from app.services.audit_service import log_audit
 
 router = APIRouter()
 
@@ -199,11 +200,11 @@ async def review_action(
             case.initial_reviewer_id = user.id
         else:
             # 事实型知识的初审 或 经验型知识的复审：直接入库
-            await _approve_and_index(case, final_content, user, db)
+            await _approve_and_index(case, final_content, user, req.review_comment or "", db)
 
     elif req.action == "approve_edited":
         # ===== 通过含修改 =====
-        await _approve_and_index(case, final_content, user, db)
+        await _approve_and_index(case, final_content, user, req.review_comment or "", db)
 
     elif req.action == "reject":
         # ===== 驳回 =====
@@ -218,8 +219,6 @@ async def review_action(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"不支持的审核操作: {req.action}")
 
-    # 审计日志
-    from app.services.audit_service import log_audit
     action_map = {"approve": "review.approve", "approve_edited": "review.approve_edited", "reject": "review.reject"}
     await log_audit(db, user.id, action_map.get(req.action, "review.action"), "case_upload", case_id, f"审核案例 #{case_id}: {req.action}")
 
@@ -231,6 +230,7 @@ async def _approve_and_index(
     case: CaseUpload,
     final_content: str,
     reviewer: User,
+    review_comment: str,
     db: AsyncSession,
 ):
     """
@@ -290,7 +290,7 @@ async def _approve_and_index(
     # Step 4: 更新案例状态
     current_status = case.review_status
     case.review_status = ReviewStatus.APPROVED
-    case.review_comment = "审核通过，已纳入知识库"
+    case.review_comment = review_comment or "审核通过，已纳入知识库"
     case.linked_entry_id = entry.id
 
     if current_status == ReviewStatus.PENDING_INITIAL:

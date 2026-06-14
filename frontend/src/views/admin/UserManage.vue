@@ -18,6 +18,7 @@
           <el-button v-if="row.status==='active'" size="small" type="danger" @click="disableUser(row)" :loading="acting===row.id">禁用</el-button>
           <el-button v-if="row.status==='disabled'" size="small" @click="enableUser(row)" :loading="acting===row.id">启用</el-button>
           <el-button size="small" @click="resetPwd(row)">重置密码</el-button>
+          <el-button v-if="row.username!=='admin'" size="small" type="danger" plain @click="delUser(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -68,6 +69,15 @@ async function enableUser(row) {
     ElMessage.success('用户已启用')
     fetchUsers()
   } finally { acting.value = null }
+}
+
+async function delUser(row) {
+  await ElMessageBox.confirm(`确定删除用户"${row.name}"吗？此操作不可撤销。`, '确认删除', { type: 'error' })
+  try {
+    await api.post(`/api/v1/auth/users/${row.id}/delete`)
+    ElMessage.success('用户已删除')
+    fetchUsers()
+  } catch {}
 }
 
 async function resetPwd(row) {

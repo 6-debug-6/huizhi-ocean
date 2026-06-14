@@ -13,7 +13,7 @@ export function getConversation(id) {
 }
 
 export function deleteConversation(id) {
-  return api.delete(`/api/v1/conversations/${id}`)
+  return api.post(`/api/v1/conversations/${id}/delete`)
 }
 
 export function renameConversation(id, title) {

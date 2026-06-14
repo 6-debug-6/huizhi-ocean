@@ -26,6 +26,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_admin
 from app.models.user import User, UserRole
 from app.models.audit import ProcedureTemplate, TaskRecord
+from app.services.audit_service import log_audit
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -112,7 +113,6 @@ async def create_template(
     )
     db.add(template)
     await db.flush()
-    from app.services.audit_service import log_audit
     await log_audit(db, admin.id, "template.create", "procedure_template", template.id, f"创建模板：{req.name}")
     await db.commit()
     await db.refresh(template)
@@ -156,7 +156,6 @@ async def update_template(
     t.version = f"V{int(parts[0])}.{minor + 1}" if minor < 9 else f"V{int(parts[0]) + 1}.0"
     t.version_num = (await db.scalar(select(func.max(ProcedureTemplate.version_num))) or 0) + 1
 
-    from app.services.audit_service import log_audit
     await log_audit(db, admin.id, "template.update", "procedure_template", template_id, f"更新模板：{t.name}")
     await db.commit()
     return {"message": "模板已更新", "version": t.version}
@@ -263,7 +262,6 @@ async def create_task(
     db.add(task)
     await db.flush()
 
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "task.create", "task_record", task.id, f"开始作业：{req.title}")
     await db.commit()
     await db.refresh(task)
@@ -350,7 +348,6 @@ async def confirm_step(
         task.status = "completed"
         task.completed_at = datetime.now()
 
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "task.step_confirm", "task_record", task_id, f"确认步骤 {task.current_step}/{task.total_steps}: {task.title}")
     await db.commit()
 
@@ -443,7 +440,6 @@ async def handover_task(
     task.handover_chain = chain
     flag_modified(task, "handover_chain")
 
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "task.handover", "task_record", task_id, f"交接作业：{task.title} → {receiver.name}")
 
     await db.commit()
@@ -485,13 +481,13 @@ async def complete_task(
     task.status = "completed"
     task.completed_at = datetime.now()
 
-    from app.services.audit_service import log_audit
     await log_audit(db, user.id, "task.complete", "task_record", task_id, f"完成任务：{task.title}")
     await db.commit()
     return {"message": "任务已完成"}
 
 
 @router.delete("/{task_id}")
+@router.post("/{task_id}/delete")
 async def delete_task(
     task_id: int,
     user: User = Depends(get_current_user),

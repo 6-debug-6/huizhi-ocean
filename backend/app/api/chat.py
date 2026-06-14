@@ -24,7 +24,7 @@ RAG 流程（send_message）：
     - 连续两次 useless → 提示用户提交客服工单
 """
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.database import get_db
@@ -87,6 +87,68 @@ async def list_conversations(
     )
     convs = result.scalars().all()
     return [{"id": c.id, "title": c.title, "created_at": str(c.created_at), "updated_at": str(c.updated_at)} for c in convs]
+
+
+@router.get("/conversations/my-feedback")
+async def get_my_feedback(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取当前用户的 AI 回复修正/反馈历史"""
+    conv_result = await db.execute(
+        select(Conversation.id).where(Conversation.user_id == user.id)
+    )
+    conv_ids = [row[0] for row in conv_result.all()]
+    if not conv_ids:
+        return {"items": [], "total": 0}
+
+    msg_query = (
+        select(Message)
+        .where(
+            Message.conversation_id.in_(conv_ids),
+            Message.role == "assistant",
+            Message.feedback != "",
+            Message.feedback.isnot(None),
+        )
+        .order_by(Message.created_at.desc())
+    )
+
+    count_result = await db.execute(
+        select(func.count()).select_from(msg_query.subquery())
+    )
+    total = count_result.scalar() or 0
+
+    result = await db.execute(
+        msg_query.offset((page - 1) * page_size).limit(page_size)
+    )
+    messages = result.scalars().all()
+
+    items = []
+    for msg in messages:
+        prev_result = await db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == msg.conversation_id,
+                Message.role == "user",
+                Message.created_at < msg.created_at,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        prev_msg = prev_result.scalar_one_or_none()
+
+        items.append({
+            "id": msg.id,
+            "question": (prev_msg.content[:200] if prev_msg else ""),
+            "ai_reply": msg.content[:300],
+            "feedback": msg.feedback,
+            "comment": msg.feedback_comment or "",
+            "created_at": str(msg.created_at) if msg.created_at else "",
+        })
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/conversations/{conv_id}")
@@ -286,6 +348,7 @@ async def submit_feedback(
 
 
 @router.delete("/conversations/{conv_id}")
+@router.post("/conversations/{conv_id}/delete")
 async def delete_conversation(
     conv_id: int,
     user: User = Depends(get_current_user),
@@ -329,7 +392,6 @@ async def rename_conversation(
     conv.title = title
     await db.commit()
     return {"message": "对话已重命名"}
-
 
 def _parse_structured_reply(reply: str) -> dict:
     """尝试解析 AI 回复中的结构化内容"""

@@ -86,7 +86,7 @@ function goTask(t) { router.push(`/task/${t.id}`) }
 async function delTask(t) {
   try {
     await ElMessageBox.confirm('确定删除此任务吗？', '确认')
-    await api.delete(`/api/v1/tasks/${t.id}`)
+    await api.post(`/api/v1/tasks/${t.id}/delete`)
     ElMessage.success('任务已删除')
     tasks.value = tasks.value.filter(x => x.id !== t.id)
   } catch { /* canceled */ }

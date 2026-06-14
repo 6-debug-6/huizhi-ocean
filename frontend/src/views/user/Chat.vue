@@ -143,21 +143,20 @@ function handleImageSelect(file) {
 }
 
 async function doFeedback(msg, type) {
+  let comment = ''
+  // 如果选"部分有用"或"无用"，先弹出修正输入框
+  if (type !== 'useful') {
+    const result = await ElMessageBox.prompt('请简要说明修正建议（可选）', '反馈建议', { inputType: 'textarea' }).catch(() => null)
+    if (result) comment = result.value || ''
+  }
   try {
-    await submitFeedback(convId.value, type)
+    await submitFeedback(convId.value, type, comment)
     msg.feedback = type
+    msg.feedback_comment = comment
     if (type === 'useless') {
       uselessCount.value++
-      if (uselessCount.value >= 2) {
-        // 不弹窗，展示工单提示
-      }
     }
     ElMessage.success('反馈已提交')
-    // 如果选"部分有用"或"无用"，弹出修正输入框
-    if (type !== 'useful') {
-      const { value } = await ElMessageBox.prompt('请简要说明修正建议（可选）', '反馈建议', { inputType: 'textarea' }).catch(() => ({}))
-      if (value) { /* 已通过 feedback_comment 传递，这里简化处理 */ }
-    }
   } catch {}
 }
 
