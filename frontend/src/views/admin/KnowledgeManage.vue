@@ -65,7 +65,7 @@
       </div>
       <template #footer>
         <el-button @click="showImport=false">关闭</el-button>
-        <el-button type="primary" @click="doImport" :loading="importing">开始导入</el-button>
+        <el-button v-if="!importDone" type="primary" @click="doImport" :loading="importing">开始导入</el-button>
       </template>
     </el-dialog>
   </div>
@@ -83,6 +83,7 @@ const keyword = ref(''); const statusFilter = ref('')
 // ========== PDF 导入 ==========
 const showImport = ref(false)
 const importing = ref(false)
+const importDone = ref(false)
 const importResult = ref('')
 const importForm = reactive({ pdfList: [], deviceModel: '', file: null })
 
@@ -96,6 +97,7 @@ function resetImport() {
   importForm.deviceModel = ''
   importForm.file = null
   importResult.value = ''
+  importDone.value = false
 }
 
 async function doImport() {
@@ -115,6 +117,7 @@ async function doImport() {
       ${data.images_described ? `图片描述：${data.images_described} 张<br>` : ''}
       <a href="/admin/knowledge/${data.entry_id}/edit">点击编辑此条目 →</a>
     `
+    importDone.value = true
     fetchList()
   } catch (e) {
     importResult.value = `<span style="color:#dc2626">导入失败：${e.response?.data?.detail || e.message}</span>`

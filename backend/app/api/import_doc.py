@@ -12,7 +12,7 @@
     5. 向量化 → 存入 ChromaDB
     6. 创建 KnowledgeEntry 记录（来源=pdf_import，状态=草稿）
 """
-import os
+import os, shutil, uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -74,41 +74,84 @@ async def import_pdf(
     if not documents:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF 中未提取到文本内容")
 
-    # ========== 为图片 chunk 生成描述（千问 VL） ==========
+    # ========== 处理图片 chunk：保存到 uploads + 生成描述（千问 VL） ==========
     img_described = 0
     from app.services.llm_adapter import model_router
+
+    # 确保图片上传目录存在
+    img_upload_dir = os.path.join(settings.UPLOAD_DIR, "images")
+    os.makedirs(img_upload_dir, exist_ok=True)
 
     for doc in documents:
         if doc["metadata"].get("type") == "image" and doc["metadata"].get("image_path"):
             img_path = doc["metadata"]["image_path"]
+            # 复制图片到 uploads 目录，生成可访问的 URL
+            img_ext = os.path.splitext(img_path)[1] or ".png"
+            img_filename = f"pdf_img_{uuid.uuid4().hex[:8]}{img_ext}"
+            img_dest = os.path.join(img_upload_dir, img_filename)
+            img_url = f"/uploads/images/{img_filename}"
             try:
-                description = await model_router.analyze_image(
-                    image_url=f"file://{img_path}",
-                    prompt="请详细描述这张设备维修手册图片中的内容，"
-                           "特别是设备结构、拆解步骤、工具使用、标注信息等关键内容。用中文回答。"
+                shutil.copy2(img_path, img_dest)
+                # 生成描述
+                description = ""
+                try:
+                    description = await model_router.analyze_image(
+                        image_url=f"file://{img_path}",
+                        prompt="请详细描述这张设备维修手册图片中的内容，"
+                               "特别是设备结构、拆解步骤、工具使用、标注信息等关键内容。用中文回答。"
+                    )
+                except Exception:
+                    pass
+                desc_text = description.strip() if description and description.strip() else "（图片内容请人工查看）"
+                doc["content"] = (
+                    f'<div style="margin:12px 0;padding:10px;background:#f8fafc;border-radius:6px">'
+                    f'<img src="{img_url}" style="max-width:100%;border-radius:4px" />'
+                    f'<p style="margin-top:8px;font-size:14px;color:#555"><b>图片描述：</b>{desc_text}</p>'
+                    f'</div>'
                 )
-                if description and description.strip():
-                    doc["content"] = f"[图片描述]：{description.strip()}"
-                    img_described += 1
+                img_described += 1
             except Exception:
-                doc["content"] = "[图片描述]：暂未生成描述（视觉模型不可用），请人工查看原PDF"
+                doc["content"] = "[图片]：复制图片失败，请人工查看原PDF"
 
-    # 将完整内容聚合为知识条目正文
+    # 将完整内容聚合为知识条目正文（HTML格式，保证前端直接可读）
     full_text_parts = []
     device_models = [device_model] if device_model else []
     for doc in documents:
-        if doc.get("content"):
-            source_info = f"[第{doc['metadata'].get('page', '?')}页 · {doc['metadata'].get('type', 'text')}]"
-            full_text_parts.append(f"{source_info}\n{doc['content']}")
+        if not doc.get("content"):
+            continue
+        page = doc["metadata"].get("page", "?")
+        dtype = doc["metadata"].get("type", "text")
 
-    # 创建 KnowledgeEntry（草稿状态，管理员后续编辑发布）
+        if dtype == "image":
+            # 图片chunk已包含完整HTML（img标签+描述），直接追加
+            full_text_parts.append(doc["content"])
+        elif dtype == "table":
+            # 表格chunk：保留格式并用等宽字体展示
+            full_text_parts.append(
+                f'<div style="margin:12px 0;font-size:13px;background:#f5f5f5;padding:10px;border-radius:4px">'
+                f'<b>[第{page}页 · 表格]</b><br>'
+                f'<pre style="white-space:pre-wrap;margin:4px 0">{doc["content"]}</pre>'
+                f'</div>'
+            )
+        else:
+            # 文本chunk：用p标签包裹，保留段落结构
+            text_lines = doc["content"].split("\n")
+            text_html = "<br>".join(text_lines)
+            full_text_parts.append(
+                f'<div style="margin:8px 0">'
+                f'<b style="color:#1d4ed8">[第{page}页]</b> '
+                f'<span>{text_html}</span>'
+                f'</div>'
+            )
+
+    # 创建 KnowledgeEntry
     entry = KnowledgeEntry(
         title=f"{file.filename}（PDF导入）",
-        content="\n\n---\n\n".join(full_text_parts),
+        content='<div style="line-height:1.8">' + "\n<hr style='margin:16px 0;border:1px dashed #ddd'>\n".join(full_text_parts) + '</div>',
         summary=f"从 {file.filename} 自动导入，共 {len(documents)} 个知识片段" +
                 (f"，{img_described} 张图片已生成描述" if img_described else ""),
         source=KnowledgeSource.PDF_IMPORT,
-        source_ref=file.filename,
+        source_ref=f"/uploads/{filepath}",  # 原始 PDF 文件的访问 URL
         device_models=device_models,
         fault_tags=[],
         is_procedure=False,

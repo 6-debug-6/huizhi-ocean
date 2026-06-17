@@ -35,8 +35,16 @@
         </div>
       </div>
 
+      <!-- 原文件入口（PDF导入类，仅 source_ref 为有效 URL 路径时显示） -->
+      <div v-if="entry.source === 'pdf_import' && entry.source_ref && entry.source_ref.startsWith('/uploads/')" class="file-entry">
+        <el-button type="primary" @click="openOriginalFile(entry.source_ref)">
+          <el-icon><Document /></el-icon> 查看原始 PDF 文件
+        </el-button>
+        <span class="file-hint">点击在新标签页中打开原始PDF手册</span>
+      </div>
+
       <!-- 正文内容 -->
-      <div class="detail-content" v-html="entry.content"></div>
+      <div class="detail-content" v-html="formattedContent"></div>
 
       <!-- 步骤化内容（作业指引类型） -->
       <div v-if="entry.is_procedure && entry.procedure_data?.length" class="procedure-section">
@@ -76,9 +84,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { View, WarningFilled } from '@element-plus/icons-vue'
+import { View, WarningFilled, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getKnowledgeDetail } from '@/api/knowledge'
 import { SOURCE_LABELS } from '@/utils/constants'
@@ -88,6 +96,15 @@ const route = useRoute()
 const router = useRouter()
 const entry = ref(null)
 const loading = ref(false)
+
+/** 格式化正文：换行转<br>（仅纯文本，HTML标签保留不动） */
+const formattedContent = computed(() => {
+  const raw = entry.value?.content || ''
+  // 已有HTML标签 → 直接渲染
+  if (/<\/?(div|p|table|h[1-6]|ul|ol|li|img|hr|pre)\b/i.test(raw)) return raw
+  // 纯文本 → \n 转 <br>
+  return raw.replace(/\n/g, '<br>')
+})
 
 onMounted(() => {
   const id = Number(route.params.id)
@@ -101,10 +118,14 @@ async function fetchDetail(id) {
     const { data } = await getKnowledgeDetail(id)
     entry.value = data
   } catch (e) {
-    // axios 拦截器已显示错误，此处仅重置状态
     if (e.code !== 'ERR_CANCELED') loading.value = false
   }
   loading.value = false
+}
+
+/** 打开原文件（encodeURI 处理中文路径，保留 / 等URL结构字符） */
+function openOriginalFile(url) {
+  window.open(encodeURI(url), '_blank')
 }
 </script>
 
@@ -119,19 +140,17 @@ async function fetchDetail(id) {
 .tag-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tag-label { font-size: 13px; color: #666; white-space: nowrap; }
 
-.detail-content { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); line-height: 1.8; font-size: 15px; color: #333; }
-.detail-content :deep(img) { max-width: 100%; border-radius: 6px; margin: 8px 0; }
-.detail-content :deep(table) { border-collapse: collapse; width: 100%; margin: 12px 0; }
-.detail-content :deep(td), .detail-content :deep(th) { border: 1px solid #e5e7eb; padding: 8px 12px; }
-
-.procedure-section { margin-top: 24px; padding: 20px; background: #f8fafc; border-radius: 8px; }
-.procedure-section h3 { font-size: 16px; margin-bottom: 16px; }
-.compliance-list { margin-top: 8px; }
-.compliance-item { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #dc2626; margin-bottom: 4px; }
-
-.version-info { margin-top: 24px; font-size: 13px; color: #999; }
-.info-label { margin-right: 6px; }
-.ver-tag { margin-right: 6px; margin-bottom: 4px; }
-
+.file-entry { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 18px; background: #f0f7ff; border-radius: 8px; border: 1px solid #dbeafe; }
+.file-hint { font-size: 12px; color: #999; }
 .detail-actions { margin-top: 24px; display: flex; gap: 12px; }
+</style>
+
+<!-- 正文内容样式（非scoped，确保v-html渲染的元素可被样式命中） -->
+<style>
+.detail-content { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); line-height: 1.9; font-size: 15px; color: #333; }
+.detail-content p { margin: 0 0 12px 0; }
+.detail-content img { max-width: 100% !important; border-radius: 6px; margin: 10px 0; display: block; }
+.detail-content table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+.detail-content td, .detail-content th { border: 1px solid #e5e7eb; padding: 8px 12px; }
+.detail-content hr { margin: 20px 0; }
 </style>

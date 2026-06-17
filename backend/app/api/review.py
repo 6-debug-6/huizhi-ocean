@@ -188,8 +188,8 @@ async def review_action(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="初审应由管理员完成，专家负责复审")
     # 管理员也可以做复审（移除 pending_expert 对管理员的限制）
 
-    # 确定最终使用的内容（通过含修改时使用审核者提供的新内容）
-    final_content = req.content if req.action == "approve_edited" and req.content else case.content
+    # 确定最终使用的内容（审核者修改过内容时使用新内容，否则用原始内容）
+    final_content = req.content if (req.action in ("approve", "approve_edited")) and req.content else case.content
 
     if req.action == "approve":
         # ===== 通过 =====
@@ -241,10 +241,17 @@ async def _approve_and_index(
     3. 向量化后存入 ChromaDB（用于后续检索）
     4. 更新 case 的审核状态和关联知识条目 ID
     """
+    # 将案例中的图片 URL 嵌入 content 末尾，确保入库后图片可见
+    img_html = ""
+    if case.images:
+        img_html = "<div style='margin-top:16px'><h4>现场图片</h4>" + \
+            "".join([f"<img src='{img}' style='max-width:100%;margin:8px 0;border-radius:6px' />" for img in case.images if img]) + \
+            "</div>"
+
     # Step 1: 创建知识条目
     entry = KnowledgeEntry(
         title=case.title,
-        content=final_content,
+        content=final_content + img_html,
         summary=case.title,  # 摘要默认用标题
         source=KnowledgeSource.USER_UPLOAD,
         source_ref=f"案例 #{case.id}",

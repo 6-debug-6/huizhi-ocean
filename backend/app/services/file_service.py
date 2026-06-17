@@ -84,7 +84,8 @@ def save_upload(file_content: bytes, original_name: str, subdir: str = "files") 
         f.write(file_content)
 
     # 返回含子目录的相对路径
-    return os.path.join(subdir, filename)
+    # 统一使用正斜杠（URL 风格），避免 Windows 反斜杠混入 HTML/CSS URL
+    return os.path.join(subdir, filename).replace("\\", "/")
 
 
 def convert_webp_to_png(filepath: str) -> str:

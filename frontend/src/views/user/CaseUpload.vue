@@ -11,11 +11,15 @@
       </el-form-item>
 
       <el-form-item label="设备型号">
-        <el-select v-model="form.device_models" multiple filterable allow-create placeholder="输入设备型号后回车添加" style="width:100%"/>
+        <el-select v-model="form.device_models" multiple filterable allow-create placeholder="选择或输入设备型号" style="width:100%">
+          <el-option v-for="dm in deviceOptions" :key="dm" :label="dm" :value="dm" />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="故障分类">
-        <el-select v-model="form.fault_tags" multiple filterable allow-create placeholder="如：机械故障、电气故障" style="width:100%"/>
+        <el-select v-model="form.fault_tags" multiple filterable allow-create placeholder="选择或输入故障标签" style="width:100%">
+          <el-option v-for="ft in faultOptions" :key="ft" :label="ft" :value="ft" />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="知识类型">
@@ -64,12 +68,25 @@ const form = reactive({
   attachments: [],
 })
 
-// 恢复草稿
-onMounted(() => {
+// 加载后台配置的选项
+const deviceOptions = ref([])
+const faultOptions = ref([])
+
+onMounted(async () => {
+  // 恢复草稿
   const draft = localStorage.getItem('case_draft')
   if (draft) {
     try { Object.assign(form, JSON.parse(draft)) } catch {}
   }
+  // 加载设备型号和故障标签选项
+  try {
+    const [dmRes, ftRes] = await Promise.all([
+      api.get('/api/v1/config/device-models'),
+      api.get('/api/v1/config/fault-tags'),
+    ])
+    deviceOptions.value = (dmRes.data || []).map(d => d.name)
+    faultOptions.value = (ftRes.data || []).map(t => t.name)
+  } catch {}
 })
 
 async function uploadImage(options) {

@@ -75,7 +75,10 @@
             shadow="hover"
             @click="goDetail(item.id)"
           >
-            <div class="k-card-title">{{ item.title }}</div>
+            <div class="k-card-title">
+              <el-tag v-if="item.source === 'pdf_import'" type="danger" size="small" effect="plain" style="margin-right:4px">PDF</el-tag>
+              {{ item.title }}
+            </div>
             <div class="k-card-summary">{{ item.summary || item.title }}</div>
             <div class="k-card-tags">
               <el-tag v-for="dm in item.device_models" :key="dm" size="small" type="success" effect="plain">{{ dm }}</el-tag>

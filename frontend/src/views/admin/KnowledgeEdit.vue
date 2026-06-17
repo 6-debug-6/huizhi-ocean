@@ -13,6 +13,12 @@
         <el-select v-model="form.fault_tags" multiple filterable allow-create placeholder="输入故障标签" style="width:100%" />
       </el-form-item>
       <el-form-item label="检修等级"><el-select v-model="form.maintenance_level" placeholder="可选"><el-option label="日常检修" value="日常" /><el-option label="定修" value="定修" /><el-option label="大修" value="大修" /></el-select></el-form-item>
+      <el-form-item label="图片">
+        <el-upload :http-request="uploadImage" :show-file-list="false" accept="image/*">
+          <el-button size="small">上传图片</el-button>
+        </el-upload>
+        <span style="font-size:12px;color:#999;margin-left:8px">上传后将图片链接插入正文末尾</span>
+      </el-form-item>
       <el-form-item label="正文内容" required>
         <el-input v-model="form.content" type="textarea" :rows="12" placeholder="知识条目正文（富文本）" />
       </el-form-item>
@@ -31,6 +37,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import api from '@/api'
 import { getKnowledgeDetail, createKnowledge, updateKnowledge } from '@/api/knowledge'
 
 const route = useRoute(); const router = useRouter()
@@ -43,6 +50,18 @@ onMounted(() => { if (!isNew.value) fetchDetail() })
 async function fetchDetail() {
   loading.value = true
   try { const { data } = await getKnowledgeDetail(route.params.id); form.value = { ...data, change_summary: '' } } finally { loading.value = false }
+}
+
+/** 上传图片并插入正文末尾 */
+async function uploadImage(options) {
+  const fd = new FormData()
+  fd.append('file', options.file)
+  try {
+    const { data } = await api.post('/api/v1/upload', fd)
+    const imgTag = `<img src="${data.url}" style="max-width:100%;margin:8px 0;border-radius:6px" />`
+    form.value.content = (form.value.content || '') + '\n' + imgTag
+    ElMessage.success('图片已插入正文')
+  } catch { ElMessage.error('图片上传失败') }
 }
 
 async function submit() {
