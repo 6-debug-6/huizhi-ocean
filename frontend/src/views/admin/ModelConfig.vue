@@ -5,6 +5,14 @@
 
     <div style="margin-bottom:12px"><el-button type="primary" @click="addConfig">新增配置</el-button></div>
 
+    <el-alert
+      v-if="!configs.length && !loading"
+      title="尚未配置任何大模型"
+      type="warning"
+      description="请点击「新增配置」添加模型。系统会自动根据模型名称识别用途（含 'deepseek' 或 '文本' → 文本对话，含 'qwen'/'vl'/'视觉' → 图文理解，含 'embed'/'bge' → 向量检索）。"
+      show-icon
+      style="margin-bottom:16px"
+    />
     <el-table :data="configs" v-loading="loading">
       <el-table-column prop="model_name" label="模型名称" min-width="160" />
       <el-table-column prop="model_type" label="类型" width="100">
@@ -36,11 +44,7 @@
     <el-dialog v-model="showDialog" :title="editingId ? '编辑配置' : '新增配置'" width="500px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="模型名称" required>
-          <el-select v-model="form.model_name" allow-create filterable style="width:100%">
-            <el-option label="deepseek-chat" value="deepseek-chat" />
-            <el-option label="qwen-vl-max" value="qwen-vl-max" />
-            <el-option label="qwen3-vl-flash" value="qwen3-vl-flash" />
-          </el-select>
+          <el-input v-model="form.model_name" placeholder="如：deepseek-chat、qwen-vl-max、gpt-4o..." />
         </el-form-item>
         <el-form-item label="模型类型" required>
           <el-radio-group v-model="form.model_type">
@@ -79,8 +83,8 @@ const configs = ref([]); const loading = ref(false)
 const showDialog = ref(false); const editingId = ref(null); const saving = ref(false)
 const testingId = ref(null)
 const form = reactive({
-  model_name: 'deepseek-chat', model_type: 'cloud', api_base: '', api_key: '',
-  parameters: { temperature: 0.3, max_tokens: 4096 }
+  model_name: '', model_type: 'cloud', api_base: '', api_key: '',
+  parameters: { temperature: 0.3, max_tokens: 8192 }
 })
 
 onMounted(() => loadConfigs())
@@ -93,9 +97,9 @@ async function loadConfigs() {
 
 function addConfig() {
   editingId.value = null
-  form.model_name = 'deepseek-chat'; form.model_type = 'cloud'
+  form.model_name = ''; form.model_type = 'cloud'
   form.api_base = ''; form.api_key = ''
-  form.parameters = { temperature: 0.3, max_tokens: 4096 }
+  form.parameters = { temperature: 0.3, max_tokens: 8192 }
   showDialog.value = true
 }
 

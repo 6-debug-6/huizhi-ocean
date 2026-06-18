@@ -19,7 +19,7 @@
               </div>
             </el-card>
           </div>
-          <el-empty v-else description="暂无任务" />
+          <el-empty v-else description="暂无任务"><p style="color:#999;font-size:13px">在"作业指引"中新建任务后可在本页查看</p></el-empty>
         </div>
       </el-tab-pane>
 
@@ -43,7 +43,7 @@
               <div v-if="c.reject_reason" class="reject-reason">驳回原因：{{ c.reject_reason }}</div>
             </el-card>
           </div>
-          <el-empty v-else description="暂无上传记录" />
+          <el-empty v-else description="暂无上传记录"><p style="color:#999;font-size:13px">在"案例上传"中提交检修经验后可在本页追踪审核状态</p></el-empty>
         </div>
       </el-tab-pane>
 
@@ -80,7 +80,7 @@
               </div>
             </div>
           </div>
-          <el-empty v-else description="暂无修正记录" />
+          <el-empty v-else description="暂无修正记录"><p style="color:#999;font-size:13px">在AI对话中对回复进行反馈后，记录会显示在此</p></el-empty>
         </div>
       </el-tab-pane>
     </el-tabs>

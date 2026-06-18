@@ -93,9 +93,9 @@
             </div>
           </el-card>
         </div>
-        <el-empty v-else-if="!loading" description="暂无知识条目">
+        <el-empty v-else-if="!loading" :description="searchText || selectedDevice || selectedFault ? '没有匹配的知识条目' : '知识库暂为空'">
           <template v-if="searchText || selectedDevice || selectedFault">
-            <p style="color:#999;font-size:13px">尝试更换筛选条件或搜索关键词</p>
+            <p style="color:#999;font-size:13px;margin-bottom:8px">尝试更换筛选条件或搜索关键词</p>
           </template>
         </el-empty>
       </div>
@@ -273,8 +273,10 @@ function removeRecent(id) {
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 
 /* 单张卡片 */
-.k-card { cursor: pointer; transition: transform 0.15s; }
-.k-card:hover { transform: translateY(-2px); }
+.k-card { cursor: pointer; transition: all 0.25s ease; border: 1px solid transparent; position: relative; overflow: hidden; }
+.k-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(29,78,216,0.12); border-color: #dbeafe; }
+.k-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #1d4ed8, #3b82f6, #60a5fa); transform: scaleX(0); transition: transform 0.3s; }
+.k-card:hover::before { transform: scaleX(1); }
 .k-card-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #222; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .k-card-summary { font-size: 13px; color: #777; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
 .k-card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }

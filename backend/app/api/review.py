@@ -276,9 +276,11 @@ async def _approve_and_index(
     )
     db.add(version)
 
-    # Step 3: 向量化入库
+    # 先提交数据库事务，释放写锁，再操作向量库（避免SQLite锁冲突）
+    await db.commit()
+
+    # Step 3: 向量化入库（commit后执行，不再与写事务冲突）
     try:
-        # 生成唯一 ID（格式：upload_{case_id}）
         doc_id = f"upload_{case.id}"
         vector_store.add_documents([{
             "id": doc_id,
@@ -291,10 +293,9 @@ async def _approve_and_index(
             },
         }])
     except Exception:
-        # 向量化失败不阻塞审核流程（后续可补索引）
         pass
 
-    # Step 4: 更新案例状态
+    # Step 4: 更新案例状态（需要新的事务）
     current_status = case.review_status
     case.review_status = ReviewStatus.APPROVED
     case.review_comment = review_comment or "审核通过，已纳入知识库"

@@ -1,7 +1,7 @@
 <template>
   <!-- 悬浮按钮（最小化时显示） -->
   <div v-if="!visible" class="cp-float-btn" @click="showPanel">
-    <span class="cp-float-icon">AI</span>
+    <img src="@/assets/ai-assistant.jpg" class="cp-float-icon" alt="AI助手" />
   </div>
 
   <!-- 弹出面板 -->
@@ -42,6 +42,12 @@
 
       <!-- 输入区 -->
       <div class="cp-input-area">
+        <div style="display:flex;gap:4px;margin-bottom:6px">
+          <el-select v-model="chatMode" size="small" style="width:110px">
+            <el-option label="🔧 检修" value="rag" />
+            <el-option label="💬 闲聊" value="casual" />
+          </el-select>
+        </div>
         <el-input
           v-model="inputText"
           :rows="2"
@@ -77,7 +83,7 @@ const visible = ref(false)
 // 初始化 useChat 并注入上下文
 const {
   convId, messages, inputText, sending, msgContainer,
-  renderContent, send, loadConversations, newChat,
+  renderContent, send, loadConversations, newChat, chatMode,
 } = useChat({
   deviceModel: props.deviceModel,
   taskStep: props.taskStep,
@@ -138,7 +144,7 @@ function goKnowledge(source) {
   transition: transform 0.2s;
 }
 .cp-float-btn:hover { transform: scale(1.1); }
-.cp-float-icon { font-size: 14px; font-weight: 700; }
+.cp-float-icon { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
 
 /* 面板 */
 .cp-panel {

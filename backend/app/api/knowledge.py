@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_admin
+from app.core.dependencies import require_admin
 from app.models.user import User
 from app.models.knowledge import KnowledgeEntry, KnowledgeVersion, KnowledgeStatus, KnowledgeSource
 from app.services.audit_service import log_audit

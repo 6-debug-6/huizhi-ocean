@@ -41,6 +41,7 @@ export function useChat(options = {}) {
   const contextTaskStep = ref(options.taskStep || '')           // 作业步骤上下文
   const contextTaskId = ref(options.taskId || null)             // 作业任务 ID
   const contextKnowledge = ref(options.knowledgeContext || '')  // 知识条目上下文
+  const chatMode = ref('rag')  // 对话模式：rag(检修) / casual(闲聊)
 
   // ========== 方法 ==========
 
@@ -99,9 +100,10 @@ export function useChat(options = {}) {
     sending.value = true
     await nextTick(); scrollBottom()
     try {
-      const { data } = await sendMessage(convId.value, fullMessage, image, activeModel.value)
+      const { data } = await sendMessage(convId.value, fullMessage, image, activeModel.value, chatMode.value)
       messages.value.pop()
       messages.value.push({ id: data.id, role: 'user', content: text })
+      // 直接显示完整回复
       messages.value.push(data)
       await nextTick(); scrollBottom()
       const conv = conversations.value.find(c => c.id === convId.value)
@@ -193,7 +195,7 @@ export function useChat(options = {}) {
     // 状态
     conversations, convId, messages, inputText, sending,
     msgContainer, uselessCount, editingId, renameText,
-    selectedImage, activeModel,
+    selectedImage, activeModel, chatMode,
     contextDeviceModel, contextTaskStep, contextTaskId, contextKnowledge,
     // 方法
     loadConversations, newChat, switchChat, send,

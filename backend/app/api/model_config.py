@@ -25,6 +25,18 @@ settings = get_settings()
 router = APIRouter()
 
 
+def _model_func_type(model_name: str) -> str:
+    """根据模型名称判断功能类型：text / vision / embedding / other"""
+    n = (model_name or "").lower()
+    if any(k in n for k in ("embed", "bge", "向量", "embedding")):
+        return "embedding"
+    if any(k in n for k in ("qwen", "vl", "视觉", "vision", "multimodal", "图片")):
+        return "vision"
+    if any(k in n for k in ("deepseek", "chat", "文本", "text", "gpt", "claude", "glm", "qwen")):
+        return "text"
+    return "other"
+
+
 @router.get("/configs")
 async def list_configs(
     admin: User = Depends(require_admin),
@@ -97,18 +109,18 @@ async def activate_config(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """激活指定配置（同类型其他配置自动停用）"""
+    """激活指定配置（同功能类型其他配置自动停用，允许文本/视觉/向量各激活一个）"""
     result = await db.execute(select(ModelConfig).where(ModelConfig.id == config_id))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="配置不存在")
 
-    # 停用同类型其他配置
-    await db.execute(
-        update(ModelConfig)
-        .where(ModelConfig.model_type == config.model_type)
-        .values(is_active=False)
-    )
+    # 停用同功能类型的其他配置
+    func_type = _model_func_type(config.model_name)
+    all_configs = (await db.execute(select(ModelConfig))).scalars().all()
+    for c in all_configs:
+        if c.id != config_id and _model_func_type(c.model_name) == func_type:
+            c.is_active = False
     config.is_active = True
     config.updated_by = admin.id
 
@@ -139,27 +151,28 @@ async def test_config(
         return {"status": "error", "message": "未配置 API Key"}
 
     try:
-        # 使用 httpx 发送简单测试请求
         import httpx
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
-        # 根据模型类型使用不同的API格式
-        if "deepseek" in config.model_name.lower():
-            body = {
-                "model": config.model_name,
-                "messages": [{"role": "user", "content": "Hello"}],
-                "max_tokens": 10,
-            }
+        func_type = _model_func_type(config.model_name)
+
+        if func_type == "embedding":
+            # Embedding 模型：发送到 /embeddings 端点
+            body = {"model": config.model_name, "input": "test"}
+            url = f"{config.api_base.rstrip('/')}/embeddings"
         else:
+            # 文本/视觉模型：发送到 /chat/completions 端点
             body = {
                 "model": config.model_name,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "max_tokens": 10,
             }
+            url = f"{config.api_base.rstrip('/')}/chat/completions"
+
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(f"{config.api_base}/v1/chat/completions", headers=headers, json=body)
+            resp = await client.post(url, headers=headers, json=body)
         if resp.status_code == 200:
             return {"status": "ok", "message": "连接成功"}
         else:

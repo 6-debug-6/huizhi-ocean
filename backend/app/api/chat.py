@@ -34,7 +34,6 @@ from app.models.conversation import Conversation, Message
 from app.services.llm_adapter import model_router
 from app.services.vector_store import vector_store
 from pydantic import BaseModel
-from typing import Optional
 
 router = APIRouter()
 
@@ -57,38 +56,15 @@ RAG_SYSTEM_PROMPT = """你是一个设备检修专家助手。回答时按以下
 用户消息：{user_message}"""
 
 # 日常对话 Prompt（闲聊、功能介绍、非检修类问题）
-CASUAL_PROMPT = """你是一个设备检修知识库的AI助手。你可以帮用户：
-- 检索设备故障现象和对应的检修方案
-- 解答设备维修相关问题
-- 引导用户描述故障现象并给出建议
-- 分析现场设备图片中的异常
+CASUAL_PROMPT = """你是一个友好、乐于助人的设备检修助手。请用自然随和的语气直接回答用户的问题。
 
-当前知识库中包含从PDF手册导入的知识和用户上传的维修案例。
-当用户问及具体设备故障时，你应切换到检修分析模式。
+注意：
+- 不要使用"分析/可能原因/推荐方案/参考来源"的结构化格式
+- 不要输出列表式的检修步骤，除非用户明确问到具体故障
+- 保持对话感，像和同事聊天一样
+- 如果用户问的是知识库相关内容，可以提及知识库中有相应的资料
 
-请用自然友好的语气回复用户的以下问题：
 {user_message}"""
-
-# 非检修意图关键词：匹配则使用 CASUAL_PROMPT
-CASUAL_INTENTS = [
-    "你能做什么", "你有什么功能", "你是谁", "你会什么",
-    "知识库有哪些", "知识库包含", "知识库的内容", "知识库里",
-    "你好", "谢谢", "再见",
-    "介绍自己", "帮助", "help",
-    "当前知识库", "有哪些内容", "能帮我什么",
-]
-
-
-def _is_casual_intent(message: str) -> bool:
-    """检测用户消息是否为非检修的日常对话"""
-    msg_lower = message.strip().lower()
-    if len(msg_lower) < 2:
-        return True  # 极短消息视为闲聊
-    for keyword in CASUAL_INTENTS:
-        if keyword in msg_lower:
-            return True
-    return False
-
 
 class FeedbackRequest(BaseModel):
     feedback: str  # useful / partial / useless
@@ -227,6 +203,7 @@ async def send_message(
     image: UploadFile | None = File(None),
     device_model: str = Form(""),
     task_step: str = Form(""),
+    chat_mode: str = Form("rag"),  # rag(检修模式) / casual(闲聊模式)
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -248,16 +225,16 @@ async def send_message(
         image_urls.append(data_url)
         has_image = True
 
-    # 检索背景知识（异步超时保护：向量库模型下载期间不阻塞对话）
+    # 检索背景知识（控制总量避免挤占生成空间导致截断）
     knowledge_context = ""
     try:
         search_results = await asyncio.wait_for(
-            asyncio.to_thread(vector_store.search, message, 8),  # 增加到8条结果
+            asyncio.to_thread(vector_store.search, message, 5),  # Top 5
             timeout=5.0
         )
-        # 每条知识片段最多1500字符（原500太短，丢失大量检修细节）
+        # 每条最多600字符，总共约3000字符（留足空间给生成）
         knowledge_context = "\n\n---\n\n".join([
-            f"[来源: {r['metadata'].get('source_file', '未知')}]\n{r['content'][:1500]}"
+            f"[来源: {r['metadata'].get('source_file', '未知')}]\n{r['content'][:600]}"
             for r in search_results
         ])
     except (asyncio.TimeoutError, Exception):
@@ -273,8 +250,8 @@ async def send_message(
         for m in recent_messages
     ])
 
-    # 判断意图：闲聊vs检修
-    casual = _is_casual_intent(message) and not has_image
+    # 判断意图：前端传 chat_mode 优先，无图片时尊重用户选择
+    casual = (chat_mode == "casual" and not has_image)
 
     # 构建 Prompt（闲聊跳过向量检索，直接用对话式 Prompt）
     if casual:
@@ -309,12 +286,12 @@ async def send_message(
             reply = await asyncio.wait_for(
                 model_router.chat(llm_messages, has_image=has_image,
                                   temperature=0.5 if casual else 0.3),
-                timeout=50.0,
+                timeout=90.0,
             )
-            break  # 成功则退出重试循环
+            break
         except asyncio.TimeoutError:
             last_error = "timeout"
-            continue  # 超时重试
+            continue
         except Exception as e:
             last_error = str(e)[:200]
             # HTTP 4xx 不重试（认证/参数错误），5xx 和网络错误重试
@@ -330,8 +307,8 @@ async def send_message(
         else:
             reply = "AI 服务暂时不可用，请稍后重试。若需紧急帮助，可提交客服工单。"
 
-    # 解析结构化回复
-    structured = _parse_structured_reply(reply)
+    # 解析结构化回复（闲聊模式跳过，避免将"分析"等日常用语误解析为检修结构）
+    structured = {} if casual else _parse_structured_reply(reply)
 
     # 保存消息
     user_msg = Message(

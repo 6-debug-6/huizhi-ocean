@@ -22,12 +22,13 @@ export function renameConversation(id, title) {
   return api.put(`/api/v1/conversations/${id}`, form)
 }
 
-export function sendMessage(conversationId, message, image = null, model = 'deepseek') {
+export function sendMessage(conversationId, message, image = null, model = 'deepseek', chatMode = 'rag') {
   const form = new FormData()
   form.append('conversation_id', conversationId)
   form.append('message', message || '')
   if (image) form.append('image', image)
   form.append('model', model)  // deepseek 或 qwen
+  form.append('chat_mode', chatMode)  // rag 或 casual
   return api.post('/api/v1/chat', form)
 }
 

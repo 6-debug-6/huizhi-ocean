@@ -4,7 +4,7 @@ import router from '@/router'
 
 const api = axios.create({
   baseURL: '',
-  timeout: 20000,  // 20秒超时，避免请求堆积
+  timeout: 40000,  // 40秒超时（AI回复可能较慢）
 })
 
 // 请求去重：短时间内相同URL+参数的请求合并

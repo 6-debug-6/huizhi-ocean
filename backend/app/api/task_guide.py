@@ -86,6 +86,7 @@ async def list_templates(
         "id": t.id, "name": t.name, "device_models": t.device_models,
         "maintenance_level": t.maintenance_level, "version": t.version,
         "version_num": t.version_num, "status": t.status,
+        "steps": t.steps or [],
         "step_count": len(t.steps or []),
         "created_at": str(t.created_at) if t.created_at else "",
     } for t in templates]

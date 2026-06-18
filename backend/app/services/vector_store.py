@@ -43,11 +43,11 @@ class QwenEmbeddingFunction(EmbeddingFunction):
     费用：text-embedding-v4 约 ¥0.0007/千 tokens，远低于对话模型
     """
 
-    def __init__(self):
-        self.api_key = settings.QWEN_API_KEY
-        # DashScope Embedding 端点（与对话 API 不同，需单独构造）
-        self.url = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
-        self.model = "text-embedding-v4"  # 千问最新 Embedding 模型
+    def __init__(self, api_key: str = "", api_base: str = ""):
+        # 优先使用数据库配置的 Key，其次 .env，最后空字符串
+        self.api_key = api_key or settings.QWEN_API_KEY
+        self.url = (api_base or "https://dashscope.aliyuncs.com/compatible-mode/v1") + "/embeddings"
+        self.model = "text-embedding-v4"
 
     def __call__(self, texts: Documents) -> Embeddings:
         """
@@ -103,24 +103,36 @@ def _create_embedding_function():
     根据配置选择合适的 Embedding 函数
 
     优先级：
-        EMBEDDING_PROVIDER = "api"   → 千问 DashScope API（推荐）
-        EMBEDDING_PROVIDER = "local" → 本地 BGE 模型（离线）
-        其他 / 出错                  → ChromaDB 内置默认（兜底）
+        1. 数据库配置（管理员在后台激活的 Embedding 模型）
+        2. EMBEDDING_PROVIDER = "api" → 千问 DashScope API
+        3. EMBEDDING_PROVIDER = "local" → 本地 BGE 模型
+        4. ChromaDB 内置默认（兜底）
     """
     provider = settings.EMBEDDING_PROVIDER.lower()
 
-    # 1. 千问 API 模式
+    # 尝试从数据库读取激活的 Embedding 配置
+    try:
+        from app.services.llm_adapter import model_router
+        db_cfg = model_router.get_embedding_config()
+        if db_cfg and db_cfg.get("api_key"):
+            test_ef = QwenEmbeddingFunction(api_key=db_cfg["api_key"], api_base=db_cfg.get("api_base", ""))
+            result = test_ef._embed_single("test", retry=1)
+            if result and any(v != 0.0 for v in result):
+                return test_ef
+    except Exception:
+        pass
+
+    # 千问 API 模式（使用 .env 中的 Key）
     if provider == "api" and settings.QWEN_API_KEY:
         try:
-            # 快速连通性检查：用短文本测试 API 是否可达
             test_ef = QwenEmbeddingFunction()
-            test_ef._embed_single("测试", retry=1)
-            return test_ef
+            result = test_ef._embed_single("test", retry=1)
+            if result and any(v != 0.0 for v in result):
+                return test_ef
         except Exception:
-            # API 不可用，继续尝试下一级
             pass
 
-    # 2. 本地 BGE 模型
+    # 本地 BGE 模型
     if provider == "local":
         try:
             return embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -130,7 +142,7 @@ def _create_embedding_function():
         except Exception:
             pass
 
-    # 3. ChromaDB 内置默认（兜底）
+    # ChromaDB 内置默认（兜底）
     return embedding_functions.DefaultEmbeddingFunction()
 
 
@@ -248,11 +260,6 @@ class ChromaVectorStore:
                     "score": 1.0 - (results["distances"][0][i] if results["distances"] else 0),
                 })
         return items
-
-    def delete_by_ids(self, ids: list[str], collection_name: str = "maintenance_knowledge"):
-        """按 ID 批量删除（知识条目归档/删除时调用）"""
-        collection = self.get_or_create_collection(collection_name)
-        collection.delete(ids=ids)
 
     def delete_by_entry_id(self, entry_id: int, collection_name: str = "maintenance_knowledge"):
         """

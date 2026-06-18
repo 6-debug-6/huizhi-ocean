@@ -19,7 +19,10 @@
           <span>用户管理</span>
         </el-menu-item>
         <el-menu-item index="/admin/devices">
-          <span>设备/模板管理</span>
+          <span>设备型号管理</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/templates">
+          <span>作业模板管理</span>
         </el-menu-item>
         <el-menu-item index="/admin/model-config">
           <span>模型配置</span>

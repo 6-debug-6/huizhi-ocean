@@ -22,7 +22,8 @@
       <template v-else>
         <div class="chat-messages" ref="msgContainer">
           <div v-for="m in messages" :key="m.id" class="msg-item" :class="m.role">
-            <div class="msg-avatar">{{ m.role === 'user' ? '我' : 'AI' }}</div>
+            <img v-if="m.role === 'assistant'" src="@/assets/ai-assistant.jpg" class="msg-avatar-img" alt="AI" />
+            <div v-else class="msg-avatar">我</div>
             <div class="msg-body">
               <div class="msg-content" v-html="renderContent(m)"></div>
               <!-- 反馈按钮 -->
@@ -37,7 +38,7 @@
             </div>
           </div>
           <div v-if="sending" class="msg-item assistant">
-            <div class="msg-avatar">AI</div><div class="msg-body"><div class="msg-content">思考中...</div></div>
+            <img src="@/assets/ai-assistant.jpg" class="msg-avatar-img" alt="AI" /><div class="msg-body"><div class="msg-content">思考中...</div></div>
           </div>
         </div>
         <!-- 输入区 -->
@@ -52,8 +53,13 @@
                 </el-upload>
                 <span v-if="selectedImage" class="image-tag">{{ selectedImage.name }} <el-button type="danger" link size="small" @click="selectedImage=null">✕</el-button></span>
               </template>
+              <!-- 对话模式 -->
+              <el-select v-model="chatMode" size="small" style="width:120px;margin-left:12px">
+                <el-option label="🔧 检修模式" value="rag" />
+                <el-option label="💬 闲聊模式" value="casual" />
+              </el-select>
               <!-- 模型选择 -->
-              <el-select v-model="activeModel" size="small" style="width:140px;margin-left:12px">
+              <el-select v-model="activeModel" size="small" style="width:140px;margin-left:6px">
                 <el-option label="DeepSeek (文本)" value="deepseek" />
                 <el-option label="千问 VL (图文)" value="qwen" />
               </el-select>
@@ -77,7 +83,7 @@ const router = useRouter()
 const {
   conversations, convId, messages, inputText, sending,
   msgContainer, uselessCount, editingId, renameText,
-  selectedImage, activeModel,
+  selectedImage, activeModel, chatMode,
   loadConversations, newChat, switchChat, send,
   handleImageSelect, doFeedback, renderContent,
   delConv, startRename, doRename,
@@ -111,6 +117,7 @@ onMounted(async () => {
 .msg-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
 .msg-item.user .msg-avatar { background: #1d4ed8; color: #fff; }
 .msg-item.assistant .msg-avatar { background: #10b981; color: #fff; }
+.msg-avatar-img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .msg-body { max-width: 75%; }
 .msg-content { background: #fff; padding: 12px 16px; border-radius: 8px; font-size: 14px; line-height: 1.7; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .msg-item.user .msg-content { background: #1d4ed8; color: #fff; }

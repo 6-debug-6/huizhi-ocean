@@ -151,9 +151,21 @@ async function delTemplate(row) {
   } catch {}
 }
 
-function editSteps(row) {
+async function editSteps(row) {
   stepsForm.id = row.id
-  stepsForm.steps = (row.steps || []).length ? JSON.parse(JSON.stringify(row.steps)) : []
+  // 优先使用列表中的 steps（后端已返回），若为空则从详情接口拉取
+  const steps = row.steps
+  if (steps && steps.length) {
+    stepsForm.steps = JSON.parse(JSON.stringify(steps))
+  } else {
+    // 列表 steps 为空时，尝试通过详情接口获取（防止数据不一致）
+    try {
+      const { data } = await api.get(`/api/v1/tasks/templates/${row.id}`)
+      stepsForm.steps = JSON.parse(JSON.stringify(data.steps || []))
+    } catch {
+      stepsForm.steps = []
+    }
+  }
   showSteps.value = true
 }
 
