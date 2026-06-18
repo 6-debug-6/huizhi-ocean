@@ -369,3 +369,35 @@ async def ticket_to_knowledge(
     await db.commit()
 
     return {"id": entry.id, "message": "工单已转化为知识条目草稿，请在知识库管理中编辑发布"}
+
+
+@router.delete("/{ticket_id}")
+@router.post("/{ticket_id}/delete")
+async def delete_ticket(
+    ticket_id: int,
+    user: User = Depends(require_role(UserRole.ADMIN, UserRole.EXPERT)),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    删除工单及其所有回复
+
+    管理员/专家可删除任何工单，工单提交者可删除自己的工单。
+    同时删除工单下的所有回复记录。
+    """
+    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
+
+    # 权限：管理员/专家或工单提交者本人
+    if user.role not in (UserRole.ADMIN, UserRole.EXPERT) and ticket.creator_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权删除此工单")
+
+    # 先删除所有关联回复
+    from sqlalchemy import delete as sa_delete
+    await db.execute(sa_delete(TicketReply).where(TicketReply.ticket_id == ticket_id))
+
+    await log_audit(db, user.id, "ticket.delete", "ticket", ticket_id, f"删除工单 #{ticket.ticket_no}")
+    await db.delete(ticket)
+    await db.commit()
+    return {"message": "工单已删除"}

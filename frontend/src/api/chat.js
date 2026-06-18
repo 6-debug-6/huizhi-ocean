@@ -32,6 +32,6 @@ export function sendMessage(conversationId, message, image = null, model = 'deep
   return api.post('/api/v1/chat', form)
 }
 
-export function submitFeedback(convId, feedback, comment = '') {
-  return api.post(`/api/v1/conversations/${convId}/feedback`, { feedback, comment })
+export function submitFeedback(convId, feedback, comment = '', messageId = null) {
+  return api.post(`/api/v1/conversations/${convId}/feedback`, { feedback, comment, message_id: messageId })
 }

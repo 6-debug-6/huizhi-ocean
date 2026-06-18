@@ -53,6 +53,7 @@ const routes = [
       { path: 'templates', name: 'TemplateManage', component: () => import('@/views/admin/TemplateManage.vue') },
       { path: 'model-config', name: 'ModelConfig', component: () => import('@/views/admin/ModelConfig.vue') },
       { path: 'logs', name: 'AuditLogs', component: () => import('@/views/admin/AuditLogs.vue') },
+      { path: 'feedback', name: 'FeedbackManage', component: () => import('@/views/admin/FeedbackManage.vue') },
       { path: 'settings', name: 'SystemSettings', component: () => import('@/views/admin/SystemSettings.vue') },
     ],
   },

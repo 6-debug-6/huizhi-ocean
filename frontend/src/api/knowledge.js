@@ -25,6 +25,11 @@ export function archiveKnowledge(id) {
   return api.put(`/api/v1/knowledge/${id}/archive`)
 }
 
+// 发布草稿知识条目
+export function publishKnowledge(id) {
+  return api.post(`/api/v1/knowledge/${id}/publish`)
+}
+
 // 版本历史
 export function getVersions(id) {
   return api.get(`/api/v1/knowledge/${id}/versions`)

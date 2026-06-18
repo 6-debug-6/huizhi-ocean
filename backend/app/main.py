@@ -30,15 +30,10 @@ async def lifespan(app: FastAPI):
     from app.services.llm_adapter import model_router
     model_router.load_configs_sync()
 
-    # 预热向量库 Embedding（在线程池中异步执行，不阻塞启动）
+    # 预热向量库 Embedding（后台执行，不阻塞启动）
     import asyncio
-    try:
-        await asyncio.wait_for(
-            asyncio.to_thread(_warmup_vector_store),
-            timeout=10.0,
-        )
-    except (asyncio.TimeoutError, Exception):
-        pass
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _warmup_vector_store)
     yield
 
 

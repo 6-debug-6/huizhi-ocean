@@ -130,7 +130,7 @@ export function useChat(options = {}) {
       comment = result.value || ''
     }
     try {
-      await submitFeedback(convId.value, type, comment)
+      await submitFeedback(convId.value, type, comment, msg.id)
       msg.feedback = type
       msg.feedback_comment = comment
       if (type === 'useless') uselessCount.value++

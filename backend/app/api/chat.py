@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_admin
 from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.services.llm_adapter import model_router
@@ -69,6 +69,7 @@ CASUAL_PROMPT = """你是一个友好、乐于助人的设备检修助手。请�
 class FeedbackRequest(BaseModel):
     feedback: str  # useful / partial / useless
     comment: str = ""
+    message_id: int | None = None  # 指定反馈的消息ID，不传则取该对话最新assistant消息
 
 
 # ---- 会话管理 ----
@@ -159,6 +160,191 @@ async def get_my_feedback(
         })
 
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/admin/feedback")
+async def get_all_feedback(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    feedback_type: str = Query("", description="按反馈类型筛选：useful / partial / useless"),
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    管理员查看所有用户的AI回复反馈（跨所有对话）
+
+    支持按反馈类型筛选，返回用户姓名和完整的问题/AI回复内容。
+    管理员可据此发现知识库盲区、模型回答质量问题，并采取对应措施。
+    """
+    from app.models.user import User as UserModel
+
+    # 构建查询：所有有反馈的 assistant 消息
+    conditions = [Message.role == "assistant", Message.feedback != "", Message.feedback.isnot(None)]
+    if feedback_type:
+        conditions.append(Message.feedback == feedback_type)
+
+    msg_query = select(Message).where(*conditions)
+
+    # 总数
+    count_result = await db.execute(
+        select(func.count()).select_from(msg_query.subquery())
+    )
+    total = count_result.scalar() or 0
+
+    # 分页
+    result = await db.execute(
+        msg_query.order_by(Message.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    messages = result.scalars().all()
+
+    items = []
+    for msg in messages:
+        # 查找该消息所属对话和用户
+        conv_result = await db.execute(
+            select(Conversation).where(Conversation.id == msg.conversation_id)
+        )
+        conv = conv_result.scalar_one_or_none()
+        user_name = ""
+        user_id = None
+        if conv:
+            user_id = conv.user_id
+            u_result = await db.execute(select(UserModel).where(UserModel.id == conv.user_id))
+            u = u_result.scalar_one_or_none()
+            if u:
+                user_name = u.name
+
+        # 查找该消息之前的用户提问
+        prev_result = await db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == msg.conversation_id,
+                Message.role == "user",
+                Message.created_at < msg.created_at,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        prev_msg = prev_result.scalar_one_or_none()
+
+        items.append({
+            "id": msg.id,
+            "message_id": msg.id,
+            "conversation_id": msg.conversation_id,
+            "user_name": user_name,
+            "user_id": user_id,
+            "question": (prev_msg.content[:300] if prev_msg else ""),
+            "ai_reply": msg.content[:500],
+            "feedback": msg.feedback,
+            "comment": msg.feedback_comment or "",
+            "created_at": str(msg.created_at) if msg.created_at else "",
+        })
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/admin/feedback/{message_id}/to-knowledge")
+async def feedback_to_knowledge(
+    message_id: int,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    将 AI 反馈消息转化为知识条目（管理员）
+
+    转化规则：
+    1. 原用户提问 → 知识条目标题
+    2. AI 回复 + 用户修正建议 → 知识条目内容
+    3. 来源标记为 ai_feedback
+    4. 状态为 draft（管理员后续可编辑发布）
+    """
+    # 获取反馈消息
+    result = await db.execute(
+        select(Message).where(Message.id == message_id, Message.role == "assistant", Message.feedback != "", Message.feedback.isnot(None))
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在或无反馈记录")
+
+    # 获取用户提问
+    prev_result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == msg.conversation_id, Message.role == "user", Message.created_at < msg.created_at)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    prev_msg = prev_result.scalar_one_or_none()
+    question = prev_msg.content if prev_msg else "未知问题"
+
+    # 获取用户信息
+    conv_result = await db.execute(select(Conversation).where(Conversation.id == msg.conversation_id))
+    conv = conv_result.scalar_one_or_none()
+    author_id = None
+    if conv:
+        author_id = conv.user_id
+
+    # 构建知识内容
+    content_parts = [f"## 用户提问\n{question}"]
+    content_parts.append(f"## AI 回复\n{msg.content}")
+    if msg.feedback_comment:
+        content_parts.append(f"## 用户修正建议\n{msg.feedback_comment}")
+
+    from app.models.knowledge import KnowledgeEntry, KnowledgeVersion, KnowledgeSource, KnowledgeStatus
+    entry = KnowledgeEntry(
+        title=question[:200],
+        content="\n\n".join(content_parts),
+        summary=question[:200],
+        source=KnowledgeSource.AI_FEEDBACK,
+        source_ref=f"AI反馈 #{message_id}",
+        device_models=[],
+        fault_tags=[],
+        is_procedure=False,
+        author_id=author_id,
+        current_version="V1.0",
+        status=KnowledgeStatus.DRAFT,
+    )
+    db.add(entry)
+    await db.flush()
+
+    version = KnowledgeVersion(
+        entry_id=entry.id, version="V1.0", version_num=1,
+        content=entry.content,
+        change_summary="从AI反馈转化生成",
+        editor_id=user.id,
+    )
+    db.add(version)
+    await log_audit(db, user.id, "feedback.to_knowledge", "message", message_id, f"AI反馈 #{message_id} 转化为知识条目 #{entry.id}")
+    await db.commit()
+
+    return {"id": entry.id, "message": "AI反馈已转化为知识条目草稿，请在知识库管理中编辑发布"}
+
+
+@router.delete("/admin/feedback/{message_id}")
+@router.post("/admin/feedback/{message_id}/delete")
+async def delete_feedback(
+    message_id: int,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    删除 AI 反馈记录（仅管理员）
+
+    删除单条消息的反馈标记（feedback 和 feedback_comment 字段清空），消息本身保留。
+    用于清理无效或误操作产生的反馈数据。
+    """
+    result = await db.execute(
+        select(Message).where(Message.id == message_id, Message.role == "assistant")
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+
+    msg.feedback = ""
+    msg.feedback_comment = ""
+    await log_audit(db, user.id, "feedback.delete", "message", message_id, f"清除AI反馈 #{message_id}")
+    await db.commit()
+    return {"message": "反馈记录已删除"}
 
 
 @router.get("/conversations/{conv_id}")
@@ -352,13 +538,18 @@ async def submit_feedback(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 获取最后一条 assistant 消息
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conv_id, Message.role == "assistant")
-        .order_by(Message.created_at.desc())
-        .limit(1)
-    )
+    # 获取指定消息或最后一条 assistant 消息
+    if req.message_id:
+        result = await db.execute(
+            select(Message).where(Message.id == req.message_id, Message.conversation_id == conv_id, Message.role == "assistant")
+        )
+    else:
+        result = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == conv_id, Message.role == "assistant")
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
     last_msg = result.scalar_one_or_none()
     if not last_msg:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="没有可反馈的消息")

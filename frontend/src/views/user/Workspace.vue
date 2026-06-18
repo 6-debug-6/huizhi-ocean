@@ -56,7 +56,10 @@
               <div class="card-meta">{{ t.title }}</div>
               <div class="card-bottom">
                 <el-tag :type="ticketTag(t.status)" size="small">{{ ticketLabel(t.status) }}</el-tag>
-                <span class="card-time">{{ t.created_at?.slice(0, 10) }}</span>
+                <div>
+                  <el-button size="small" type="danger" plain @click.stop="delTicket(t)">删除</el-button>
+                  <span class="card-time">{{ t.created_at?.slice(0, 10) }}</span>
+                </div>
               </div>
             </el-card>
           </div>
@@ -91,6 +94,7 @@
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/api'
+import { deleteTicket } from '@/api/tickets'
 import { TICKET_STATUS, TASK_STATUS, REVIEW_STATUS } from '@/utils/constants'
 import { formatDate } from '@/utils/helpers'
 
@@ -135,6 +139,15 @@ async function delCase(c) {
     await api.post(`/api/v1/cases/${c.id}/delete`)
     ElMessage.success('已删除')
     loadUploads()
+  } catch {}
+}
+
+async function delTicket(t) {
+  try {
+    await ElMessageBox.confirm('确定删除此工单吗？所有回复也将被删除。', '确认')
+    await deleteTicket(t.id)
+    ElMessage.success('已删除')
+    loadTickets()
   } catch {}
 }
 

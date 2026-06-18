@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     """
 
     # ==================== 应用基础配置 ====================
-    APP_NAME: str = "设备检修知识检索与作业系统"  # 应用显示名称
+    APP_NAME: str = "汇智海洋 - 设备检修知识检索与作业系统"  # 应用显示名称
     APP_VERSION: str = "0.1.0"                    # 当前版本号
     DEBUG: bool = True                            # 调试模式（控制日志和错误详情输出）
     SECRET_KEY: str = "change-this-to-a-random-secret-key"  # JWT 签名密钥，生产环境必须更换

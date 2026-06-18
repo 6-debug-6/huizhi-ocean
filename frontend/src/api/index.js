@@ -66,7 +66,9 @@ api.interceptors.response.use(
       router.push({ name: 'Login' })
       ElMessage.error('登录已过期，请重新登录')
     } else if (error.response?.status === 403) {
-      router.push({ name: 'Forbidden' })
+      // 403 可能是鉴权失败（如账号待审核）或越权访问，直接展示后端返回的具体原因
+      const msg = error.response?.data?.detail || '权限不足'
+      ElMessage.error(msg)
     } else if (error.code === 'ECONNABORTED') {
       // 超时不弹窗（页面会自动显示空数据/错误状态）
       console.warn('请求超时:', error.config?.url)

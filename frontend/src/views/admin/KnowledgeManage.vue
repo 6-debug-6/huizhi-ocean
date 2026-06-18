@@ -22,7 +22,7 @@
         <template #default="{ row }"><router-link :to="`/admin/knowledge/${row.id}/edit`">{{ row.title }}</router-link></template>
       </el-table-column>
       <el-table-column prop="source" label="来源" width="100">
-        <template #default="{ row }">{{ { manual:'手动', pdf_import:'PDF导入', user_upload:'用户上传', ticket:'工单转化' }[row.source] }}</template>
+        <template #default="{ row }">{{ { manual:'手动', pdf_import:'PDF导入', user_upload:'用户上传', ticket:'工单转化', ai_feedback:'AI反馈转化' }[row.source] }}</template>
       </el-table-column>
       <el-table-column prop="current_version" label="版本" width="80" />
       <el-table-column prop="status" label="状态" width="80">
@@ -36,6 +36,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="$router.push(`/admin/knowledge/${row.id}/versions`)">版本历史</el-dropdown-item>
+                <el-dropdown-item v-if="row.status==='draft'" @click="doPublish(row)">发布</el-dropdown-item>
                 <el-dropdown-item v-if="row.status!=='archived'" @click="doArchive(row)">归档</el-dropdown-item>
                 <el-dropdown-item divided @click="doDelete(row)" style="color:#dc2626">删除</el-dropdown-item>
               </el-dropdown-menu>
@@ -75,7 +76,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/api'
-import { getKnowledgeList, archiveKnowledge, deleteKnowledge } from '@/api/knowledge'
+import { getKnowledgeList, archiveKnowledge, deleteKnowledge, publishKnowledge } from '@/api/knowledge'
 
 const items = ref([]); const loading = ref(false); const total = ref(0); const page = ref(1)
 const keyword = ref(''); const statusFilter = ref('')
@@ -133,6 +134,13 @@ async function fetchList() {
     const { data } = await getKnowledgeList({ page: page.value, keyword: keyword.value, status: statusFilter.value || 'all' })
     items.value = data.items; total.value = data.total
   } finally { loading.value = false }
+}
+
+async function doPublish(row) {
+  await ElMessageBox.confirm('确定发布此草稿条目吗？发布后用户端即可检索。', '确认发布')
+  await publishKnowledge(row.id)
+  ElMessage.success('已发布')
+  fetchList()
 }
 
 async function doArchive(row) {

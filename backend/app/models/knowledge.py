@@ -36,6 +36,7 @@ class KnowledgeSource(str, enum.Enum):
     PDF_IMPORT = "pdf_import"   # PDF 批量导入
     USER_UPLOAD = "user_upload" # 用户上传
     TICKET = "ticket"           # 客服工单转化
+    AI_FEEDBACK = "ai_feedback" # AI 反馈转化
 
 
 class ReviewStatus(str, enum.Enum):

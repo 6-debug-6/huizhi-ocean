@@ -275,6 +275,29 @@ async def archive_knowledge(
     return {"message": "知识条目已归档"}
 
 
+@router.post("/{entry_id}/publish")
+async def publish_knowledge(
+    entry_id: int,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    发布草稿知识条目（仅管理员）
+
+    将草稿状态的知识条目变为已发布，用户端即可检索。
+    """
+    result = await db.execute(select(KnowledgeEntry).where(KnowledgeEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="知识条目不存在")
+    if entry.status != KnowledgeStatus.DRAFT:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅草稿状态可发布")
+    entry.status = KnowledgeStatus.PUBLISHED
+    await log_audit(db, user.id, "knowledge.publish", "knowledge_entry", entry_id, f"发布知识条目 #{entry_id}")
+    await db.commit()
+    return {"message": "知识条目已发布"}
+
+
 @router.delete("/{entry_id}")
 @router.post("/{entry_id}/delete")
 async def delete_knowledge(

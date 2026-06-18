@@ -29,3 +29,8 @@ export function updateTicketStatus(id, data) {
 export function ticketToKnowledge(id) {
   return api.post(`/api/v1/tickets/${id}/to-knowledge`)
 }
+
+// 管理员：删除工单
+export function deleteTicket(id) {
+  return api.post(`/api/v1/tickets/${id}/delete`)
+}

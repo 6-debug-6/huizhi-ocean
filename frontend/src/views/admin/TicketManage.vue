@@ -23,6 +23,11 @@
       <el-table-column label="提交时间" width="170">
         <template #default="{ row }">{{ row.created_at?.slice(0, 16).replace('T', ' ') }}</template>
       </el-table-column>
+      <el-table-column label="操作" width="80" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" type="danger" @click.stop="delTicket(row)">删除</el-button>
+        </template>
+      </el-table-column>
     </el-table>
     <el-pagination v-model:current-page="page" :total="total" :page-size="20" @current-change="fetchList" layout="prev,next" style="margin-top:16px" />
   </div>
@@ -31,7 +36,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getTicketList } from '@/api/tickets'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getTicketList, deleteTicket } from '@/api/tickets'
 
 const router = useRouter()
 const tickets = ref([]); const loading = ref(false); const total = ref(0); const page = ref(1); const statusFilter = ref('pending')
@@ -47,6 +53,15 @@ async function fetchList() {
 }
 
 function goDetail(row) { router.push(`/admin/tickets/${row.id}`) }
+
+async function delTicket(row) {
+  try {
+    await ElMessageBox.confirm(`确定删除工单"${row.ticket_no}"吗？所有回复也将被删除，此操作不可撤销。`, '确认删除', { type: 'warning' })
+    await deleteTicket(row.id)
+    ElMessage.success('工单已删除')
+    fetchList()
+  } catch {}
+}
 function tag(s) { return s === 'pending' ? 'danger' : s === 'replied' ? 'warning' : 'success' }
 function label(s) { return { pending: '待处理', processing: '处理中', replied: '已回复', resolved: '已解决', closed: '已关闭' }[s] || s }
 </script>

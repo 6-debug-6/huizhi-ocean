@@ -1,7 +1,7 @@
 <template>
   <div class="admin-layout">
     <aside class="admin-sidebar">
-      <div class="sidebar-logo">管理后台</div>
+      <div class="sidebar-logo">汇智海洋</div>
       <el-menu router :default-active="route.path" class="sidebar-menu">
         <el-menu-item index="/admin">
           <span>仪表盘</span>
@@ -12,9 +12,15 @@
         <el-menu-item index="/admin/review">
           <span>审核队列</span>
         </el-menu-item>
-        <el-menu-item index="/admin/tickets">
-          <span>客服工单</span>
-        </el-menu-item>
+        <el-sub-menu index="feedback-group">
+          <template #title><span>用户反馈</span></template>
+          <el-menu-item index="/admin/tickets">
+            <span>客服工单</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/feedback">
+            <span>AI 反馈</span>
+          </el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/admin/users">
           <span>用户管理</span>
         </el-menu-item>
