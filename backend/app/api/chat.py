@@ -33,6 +33,7 @@ from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.services.llm_adapter import model_router
 from app.services.vector_store import vector_store
+from app.services.audit_service import log_audit
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -291,33 +292,41 @@ async def feedback_to_knowledge(
         content_parts.append(f"## 用户修正建议\n{msg.feedback_comment}")
 
     from app.models.knowledge import KnowledgeEntry, KnowledgeVersion, KnowledgeSource, KnowledgeStatus
-    entry = KnowledgeEntry(
-        title=question[:200],
-        content="\n\n".join(content_parts),
-        summary=question[:200],
-        source=KnowledgeSource.AI_FEEDBACK,
-        source_ref=f"AI反馈 #{message_id}",
-        device_models=[],
-        fault_tags=[],
-        is_procedure=False,
-        author_id=author_id,
-        current_version="V1.0",
-        status=KnowledgeStatus.DRAFT,
-    )
-    db.add(entry)
-    await db.flush()
+    import logging
+    logger = logging.getLogger(__name__)
 
-    version = KnowledgeVersion(
-        entry_id=entry.id, version="V1.0", version_num=1,
-        content=entry.content,
-        change_summary="从AI反馈转化生成",
-        editor_id=user.id,
-    )
-    db.add(version)
-    await log_audit(db, user.id, "feedback.to_knowledge", "message", message_id, f"AI反馈 #{message_id} 转化为知识条目 #{entry.id}")
-    await db.commit()
+    try:
+        entry = KnowledgeEntry(
+            title=question[:200],
+            content="\n\n".join(content_parts),
+            summary=question[:200],
+            source=KnowledgeSource.AI_FEEDBACK,
+            source_ref=f"AI反馈 #{message_id}",
+            device_models=[],
+            fault_tags=[],
+            is_procedure=False,
+            author_id=author_id,
+            current_version="V1.0",
+            status=KnowledgeStatus.DRAFT,
+        )
+        db.add(entry)
+        await db.flush()
 
-    return {"id": entry.id, "message": "AI反馈已转化为知识条目草稿，请在知识库管理中编辑发布"}
+        version = KnowledgeVersion(
+            entry_id=entry.id, version="V1.0", version_num=1,
+            content=entry.content,
+            change_summary="从AI反馈转化生成",
+            editor_id=user.id,
+        )
+        db.add(version)
+        await log_audit(db, user.id, "feedback.to_knowledge", "message", message_id, f"AI反馈 #{message_id} 转化为知识条目 #{entry.id}")
+        await db.commit()
+
+        return {"id": entry.id, "message": "AI反馈已转化为知识条目草稿，请在知识库管理中编辑发布"}
+    except Exception as e:
+        logger.exception("AI反馈转化知识条目失败: %s", e)
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"转化失败: {str(e)}")
 
 
 @router.delete("/admin/feedback/{message_id}")

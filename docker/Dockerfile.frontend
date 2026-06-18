@@ -1,0 +1,47 @@
+# ============================================================
+# 汇智海洋 - 前端 Dockerfile (多阶段构建)
+# 适用架构：LoongArch (loongarch64) / x86_64
+# 阶段1: Node.js 构建静态文件
+# 阶段2: Nginx 提供静态文件服务
+# ============================================================
+
+# ---------- 第一阶段：构建 ----------
+FROM node:18-slim AS builder
+
+LABEL maintainer="汇智海洋项目组"
+
+WORKDIR /app
+
+# 复制前端依赖文件
+COPY frontend/package.json frontend/package-lock.json* ./
+
+# 安装依赖
+RUN npm install --registry=https://registry.npmmirror.com
+
+# 复制前端源码
+COPY frontend/ .
+
+# 构建生产版本
+RUN npm run build
+
+# ---------- 第二阶段：Nginx 服务 ----------
+FROM nginx:stable-alpine
+
+# 安装 curl 用于健康检查
+RUN apk add --no-cache curl
+
+# 复制自定义 Nginx 配置
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# 从构建阶段复制静态文件到 Nginx 服务目录
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost/ || exit 1
+
+# Nginx 前台运行
+CMD ["nginx", "-g", "daemon off;"]

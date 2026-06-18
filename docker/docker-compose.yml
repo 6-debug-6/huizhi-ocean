@@ -1,0 +1,76 @@
+# ============================================================
+# 汇智海洋 - Docker Compose 编排文件
+# 适用架构：LoongArch (loongarch64) / x86_64
+#
+# 使用方法：
+#   1. 确保 .env 文件在 backend/ 目录下
+#   2. 执行：docker compose up -d
+#   3. 访问：http://<服务器IP>
+# ============================================================
+
+version: "3.8"
+
+services:
+  # ==================== 前端服务 ====================
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: huizhi-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - huizhi-net
+
+  # ==================== 后端服务 ====================
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: huizhi-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化数据目录（SQLite 数据库 + ChromaDB + 上传文件）
+      - backend-data:/app/data
+      # 挂载 .env 配置文件（首次部署时需准备）
+      - ../backend/.env:/app/.env:ro
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - huizhi-net
+
+  # ==================== 可选：PostgreSQL（生产环境替换 SQLite） ====================
+  # database:
+  #   image: postgres:15-alpine
+  #   container_name: huizhi-db
+  #   environment:
+  #     POSTGRES_USER: huizhi
+  #     POSTGRES_PASSWORD: change-me-to-secure-password
+  #     POSTGRES_DB: huizhi_ocean
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+  #   networks:
+  #     - huizhi-net
+
+volumes:
+  backend-data:
+    driver: local
+
+networks:
+  huizhi-net:
+    driver: bridge

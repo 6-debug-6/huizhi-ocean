@@ -1,0 +1,45 @@
+# 不纳入 Docker 构建上下文的文件和目录
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# 环境文件
+.env.local
+.env.*.local
+*.log
+
+# 数据文件（通过 volume 挂载）
+backend/data/
+
+# 文档
+docs/
+*.md
+
+# 测试
+backend/tests/
+frontend/tests/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
