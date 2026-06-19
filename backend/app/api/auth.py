@@ -152,6 +152,25 @@ async def list_users(
     return [UserInfo.model_validate(u) for u in users]
 
 
+@router.get("/colleagues")
+async def list_colleagues(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    获取同事列表（所有已登录用户可调用）
+
+    仅返回 id 和 name，用于任务交接人员选择器。
+    只返回活跃状态的用户。
+    """
+    from app.models.user import UserStatus
+    result = await db.execute(
+        select(User).where(User.status == UserStatus.ACTIVE).order_by(User.name)
+    )
+    users = result.scalars().all()
+    return [{"id": u.id, "name": u.name, "team": u.team or ""} for u in users]
+
+
 @router.put("/users/{user_id}/status")
 async def update_user_status(
     user_id: int,

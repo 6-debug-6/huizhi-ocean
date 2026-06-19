@@ -159,7 +159,7 @@
       </div>
 
       <!-- 分页 -->
-      <div v-if="total > pageSize" class="home-pagination">
+      <div class="home-pagination">
         <el-pagination
           v-model:current-page="page"
           :total="total"
@@ -365,6 +365,13 @@ function removeRecent(id) {
 .home-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 卡片区域撑满剩余空间 */
+.card-area {
+  flex: 1;
 }
 
 /* 搜索栏 */
@@ -486,5 +493,7 @@ function removeRecent(id) {
   display: flex;
   justify-content: center;
   margin-top: 24px;
+  padding: 12px 0;
+  flex-shrink: 0;
 }
 </style>

@@ -53,52 +53,45 @@ async def list_knowledge(
     首页公开浏览时使用 status=published。
     """
     query = select(KnowledgeEntry)
-    count_query = select(func.count(KnowledgeEntry.id))
 
-    # 筛选
+    # 筛选 —— SQL 层面能做的先做
     if status and status != "all":
         query = query.where(KnowledgeEntry.status == status)
-        count_query = count_query.where(KnowledgeEntry.status == status)
     if source:
         query = query.where(KnowledgeEntry.source == source)
-        count_query = count_query.where(KnowledgeEntry.source == source)
     if keyword:
         like_term = f"%{keyword}%"
         query = query.where(
             (KnowledgeEntry.title.ilike(like_term)) |
             (KnowledgeEntry.summary.ilike(like_term))
         )
-        count_query = count_query.where(
-            (KnowledgeEntry.title.ilike(like_term)) |
-            (KnowledgeEntry.summary.ilike(like_term))
-        )
 
-    # 总数
-    total_result = await db.execute(count_query)
-    total = total_result.scalar()
-
-    # 排序：hot 按浏览次数降序，latest 按更新时间降序
+    # 排序
     if sort_by == "hot":
         query = query.order_by(KnowledgeEntry.view_count.desc(), KnowledgeEntry.updated_at.desc())
     else:
         query = query.order_by(KnowledgeEntry.updated_at.desc())
 
-    # 分页
-    query = query.offset((page - 1) * page_size).limit(page_size)
+    # 全量查出（JSON 字段过滤在 Python 中做）
     result = await db.execute(query)
-    entries = result.scalars().all()
+    all_entries = result.scalars().all()
 
-    # 如果是设备型号筛选，在 Python 里过滤（JSON 字段）
+    # Python 层过滤 device_model / fault_tag（JSON 列）
     filtered = []
-    for e in entries:
+    for e in all_entries:
         if device_model and device_model not in (e.device_models or []):
             continue
         if fault_tag and fault_tag not in (e.fault_tags or []):
             continue
         filtered.append(e)
 
+    # 过滤后再算 total 和分页
+    total = len(filtered)
+    start = (page - 1) * page_size
+    paged = filtered[start:start + page_size]
+
     return KnowledgeListResponse(
-        items=[KnowledgeListItem.model_validate(e) for e in filtered],
+        items=[KnowledgeListItem.model_validate(e) for e in paged],
         total=total,
         page=page,
         page_size=page_size,
